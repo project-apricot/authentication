@@ -1,0 +1,52 @@
+---
+title: Authentication
+description: Why one section covers both directions, what the three packages contain, and how a token is obtained and reused.
+---
+
+# Authentication
+
+A microservice authenticates in two directions. It validates the tokens it is given, and it presents
+tokens of its own to the services it calls. Both are configured from one `Authentication` section here,
+because in practice they name the same provider and are deployed together.
+
+## Packages
+
+| Package | Contains |
+| --- | --- |
+| `ApricotFramework.Authentication` | The client credentials grant and its contracts. Zero dependencies. |
+| `ApricotFramework.Authentication.AspNetCore` | JWT bearer validation, configuration binding, registration. |
+| `ApricotFramework.Authentication.ErrorDefinitions` | Answers authentication failures as problem+json. |
+
+The core has no dependencies at all — `HttpClient` and `System.Text.Json` are both in the shared
+framework — so a console or worker host can obtain tokens without referencing ASP.NET Core. It is also
+what a client library depends on to accept an `IClientAuthenticator`, rather than dragging a web
+framework into a gRPC or REST client.
+
+## Obtaining a token
+
+A token request needs an endpoint, and the endpoint comes from the provider's own metadata rather than
+from configuration. Two things about that document are checked before it is used:
+
+- the `issuer` it claims must be the authority that was asked for it, and
+- the `token_endpoint` it names must be on the same host.
+
+Without the second check, a substituted or tampered metadata document names an endpoint of its own and
+the client secret is sent to whoever answers there. Both checks are why the authority is the only URL in
+configuration.
+
+What is obtained is then reused. A token is cached until its stated expiry less a small margin, so one
+handed out is never about to expire in flight, and the discovered endpoint is cached for an hour. A cold
+cache under load makes exactly one token request: concurrent callers for the same credentials and scopes
+join the request already running rather than starting their own.
+
+> **Note.** The cache is process-local. Each instance of a service obtains its own tokens, which needs
+> no shared infrastructure and puts no credential anywhere another host can read. Registering an
+> `IClientAuthenticationCache` before `AddClientAuthentication` replaces it.
+
+## Which failures are whose
+
+A failure to obtain a token for an onward call is a fault of the service holding the credentials, never
+of whoever called it. Answering 401 would tell the caller to re-authenticate, which cannot help, and
+would record a service fault as a client error. `ClientAuthenticationException.Reason` is what separates
+the case where waiting helps from the case where a person has to change something — see
+[Error definitions](./error-definitions).

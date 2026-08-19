@@ -1,0 +1,5 @@
+{
+  "title": "Authentication",
+  "description": "Both directions of a microservice's authentication from one settings section: the tokens it accepts, and the client credentials tokens it presents to the services it calls.",
+  "pages": ["index", "usage", "aspnetcore", "error-definitions"]
+}

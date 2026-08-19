@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Zero-dependency OAuth 2.0 client credentials authentication for .NET: service-to-service access tokens fetched through OpenID Connect discovery, cached until shortly before they expire, and coalesced so concurrent callers make one token request rather than many.</Description>
+    <PackageTags>oauth2;openid-connect;client-credentials;authentication;jwt;service-to-service</PackageTags>
+  </PropertyGroup>
+
+</Project>

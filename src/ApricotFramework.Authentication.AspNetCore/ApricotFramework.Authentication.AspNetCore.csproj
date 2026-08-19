@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>ASP.NET Core integration for ApricotFramework.Authentication: JWT bearer validation configured from one settings section, a service-to-service client whose credentials come from the same section, and startup validation that rejects a resource server which could never accept a token.</Description>
+    <PackageTags>oauth2;openid-connect;jwt-bearer;authentication;aspnetcore;dependencyinjection</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../ApricotFramework.Authentication/ApricotFramework.Authentication.csproj" />
+  </ItemGroup>
+
+</Project>
