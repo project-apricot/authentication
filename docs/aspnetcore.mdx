@@ -1,0 +1,95 @@
+---
+title: ASP.NET Core
+description: Registration, every setting in the Authentication section, reading the principal, and what is checked at startup.
+---
+
+# ASP.NET Core
+
+```csharp
+builder.Services.AddJwtBearerAuthentication(builder.Configuration);
+builder.Services.AddAuthorization();
+```
+
+That registers both directions: inbound bearer validation, and the client that obtains tokens for
+onward calls. A service that only calls others and serves nothing authenticated calls
+`AddClientAuthentication(builder.Configuration)` instead, which registers the client alone and does not
+ask for an audience.
+
+## Settings
+
+Everything binds from the `Authentication` section.
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `Authority` | — | Required for inbound validation. Where signing keys are read from. |
+| `ValidAudiences` | — | Required unless `ValidateAudience` is off. |
+| `ValidIssuers` | the authority | For an issuer that differs from the URL the service reaches. |
+| `ValidTokenTypes` | `["at+jwt"]` | Replaces the default rather than adding to it. |
+| `ValidateAudience` | `true` | |
+| `ValidateTokenType` | `true` | Turn off for a provider that emits no `typ`. |
+| `SkipIssuerValidation` | `false` | Development only. Warned about at startup. |
+| `AllowInsecure` | `false` | Development only. Warned about at startup. |
+| `NameClaimType`, `RoleClaimType` | framework defaults | |
+| `ClockSkew` | 5 minutes | |
+| `Client:Authority` | the inbound authority | When the provider issuing differs from the one validated. |
+| `Client:ClientId`, `Client:ClientSecret` | — | |
+| `Client:Scopes`, `Client:Resources` | none | Used when a caller names none. |
+| `Client:CredentialStyle` | `Basic` | `PostBody` for a provider that accepts only that. |
+| `Client:TokenExpirySkew` | 30 seconds | How early a cached token stops being served. |
+| `Client:MetadataCacheDuration` | 1 hour | |
+| `Client:RequestTimeout` | 30 seconds | The framework default of 100 seconds is too long to wait. |
+
+`ValidTokenTypes` cannot be emptied from configuration — the binder reads an empty JSON array as no
+value at all — which is why turning the check off is `ValidateTokenType` rather than an empty list.
+
+Supply `Client:ClientSecret` through the environment as `Authentication__Client__ClientSecret`, or
+through a secrets manager. It is read from wherever the host's configuration comes from and is never
+written anywhere by this library.
+
+## Reading the principal
+
+```csharp
+var caller = this.HttpContext.GetPrincipal();
+```
+
+`GetPrincipal` requires the request to be authenticated and nothing more. It does not require a subject,
+because a client credentials grant has none to give: a machine token from a provider following RFC 9068
+carries `client_id` and no `sub`, while Azure AD, Auth0 and Keycloak emit both. `Subject` is therefore
+nullable, and which of it and `ClientId` is present is the provider's choice rather than a reliable way
+to tell a person from a service.
+
+`TryGetPrincipal` is the same thing without the exception, for an endpoint that serves anonymous callers
+differently rather than refusing them.
+
+`Scopes` is read from either shape a provider issues: one space-delimited `scope` claim, or one claim per
+scope.
+
+## Startup checks
+
+A configuration that could never work fails before the host serves anything, rather than as a rejected
+request later.
+
+- No `Authority`, when inbound tokens are validated. There would be no signing keys.
+- No `ValidAudiences` while `ValidateAudience` is on. Every token would be rejected — which reads as a
+  broken provider rather than as a missing setting.
+- An authority that is not an absolute `http` or `https` URL, or is not `https` without `AllowInsecure`.
+- A `Client` section that names a secret but no client, or has no authority to reach.
+
+`AllowInsecure` and `SkipIssuerValidation` warn rather than fail, once each, and never stop a boot.
+
+## Going further
+
+To configure the handler beyond these settings, configure `JwtBearerOptions` for the same scheme after
+registering. A later configuration wins, so nothing here has to be undone:
+
+```csharp
+builder.Services.AddJwtBearerAuthentication(builder.Configuration);
+
+builder.Services.Configure<JwtBearerOptions>(
+    JwtBearerDefaults.AuthenticationScheme,
+    options => options.Events = new JwtBearerEvents { /* ... */ });
+```
+
+The client's outbound requests go through the named client `AuthenticationHttpClients.Token`. Add a
+retry policy or a proxy with `AddHttpClient(AuthenticationHttpClients.Token)`; the timeout and, where
+insecure transport is permitted, the handler are already set.

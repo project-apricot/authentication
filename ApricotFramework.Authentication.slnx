@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ApricotFramework.Authentication/ApricotFramework.Authentication.csproj" />
+    <Project Path="src/ApricotFramework.Authentication.AspNetCore/ApricotFramework.Authentication.AspNetCore.csproj" />
+    <Project Path="src/ApricotFramework.Authentication.ErrorDefinitions/ApricotFramework.Authentication.ErrorDefinitions.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <File Path="tests\.editorconfig" />
+    <Project Path="tests/ApricotFramework.Authentication.Tests/ApricotFramework.Authentication.Tests.csproj" />
+    <Project Path="tests/ApricotFramework.Authentication.AspNetCore.Tests/ApricotFramework.Authentication.AspNetCore.Tests.csproj" />
+    <Project Path="tests/ApricotFramework.Authentication.ErrorDefinitions.Tests/ApricotFramework.Authentication.ErrorDefinitions.Tests.csproj" />
+  </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples/ApricotFramework.Authentication.Examples.Web/ApricotFramework.Authentication.Examples.Web.csproj" />
+  </Folder>
+</Solution>

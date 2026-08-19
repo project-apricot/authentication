@@ -1,0 +1,87 @@
+---
+title: Usage
+description: Obtaining tokens without ASP.NET Core, the two calls on the authenticator, how a token is cached, and the failure reasons.
+---
+
+# Usage
+
+The core package obtains tokens on its own. It reads no configuration, so everything it needs is passed
+in — which is what lets it run in a console or worker host.
+
+```csharp
+using var httpClient = new HttpClient();
+
+var authenticator = new ClientCredentialsAuthenticator(httpClient, cache);
+
+var context = await authenticator.AuthenticateAsync(new ClientAuthenticationParameters
+{
+    Authority = "https://idp.example.com",
+    ClientId = "orders-service",
+    ClientSecret = secret,
+    Scopes = ["billing.read"],
+});
+
+request.Headers.Authorization = new AuthenticationHeaderValue(context.TokenType, context.Token);
+```
+
+Build the header from `TokenType` rather than hard-coding `Bearer`: a provider is entitled to answer
+with a different case, and some servers compare the scheme case-sensitively.
+
+## The two calls
+
+`AuthenticateAsync` returns a token. `DoAuthenticatedAsync` runs an operation with one, which is the
+better shape when the token exists only to make a call:
+
+```csharp
+var order = await authenticator.DoAuthenticatedAsync(
+    (token, ct) => this.billing.GetAsync(id, token, ct),
+    cancellationToken: cancellationToken);
+```
+
+Anything the operation itself throws is left alone. Only the failure to obtain a token becomes a
+`ClientAuthenticationException`.
+
+## Parameters
+
+Every member of `ClientAuthenticationParameters` is optional. An authenticator built over configuration
+fills what is left unset, so a caller states only what differs — usually the scopes or resources one
+downstream call needs.
+
+| Member | Notes |
+| --- | --- |
+| `Authority` | The provider's base address, not its token endpoint. |
+| `ClientId`, `ClientSecret` | Presented as HTTP Basic by default; see `ClientCredentialStyle`. |
+| `Scopes` | Sent as one space-delimited `scope` parameter. |
+| `Resources` | Sent as one `resource` parameter each, per RFC 8707. |
+
+An empty list means "none", where an absent one means "use the configured default". The distinction
+matters when a caller wants a token with no scopes at all.
+
+## Caching
+
+`IClientAuthenticationCache` holds tokens and discovered endpoints. Two entries share a key exactly when
+they deserve the same token, so build keys with `ClientAuthenticationKeys` rather than inventing a
+scheme — a key two different parameter sets can share serves one caller's token to another.
+
+The secret is deliberately not part of the key. Including it would discard every valid token the moment
+a secret rotated, and would write a credential into whatever backs the cache.
+
+## Failure reasons
+
+`ClientAuthenticationException.Reason` says what a caller can do about it.
+
+| Reason | Meaning | Retryable |
+| --- | --- | --- |
+| `Unavailable` | Unreachable, timed out, or the provider reported a fault. | Yes |
+| `InvalidCredentials` | The client identifier or secret was rejected. | No |
+| `InvalidConfiguration` | The authority, or the metadata it published, cannot be used. | No |
+| `InvalidScope` | The provider refused a requested scope. | No |
+| `Unknown` | The provider answered in a way this library could not read. | No |
+
+Cancellation is not one of them: a cancelled request throws `OperationCanceledException`, because
+abandoning a call is not the same as failing at it.
+
+> **Warning.** No exception message is safe to return to a caller. They name the authority and the
+> client, and a provider's own error description routinely quotes the request that was refused — which
+> for a token request contains the secret. The
+> [error definitions](./error-definitions) package reports a coarse reason instead.

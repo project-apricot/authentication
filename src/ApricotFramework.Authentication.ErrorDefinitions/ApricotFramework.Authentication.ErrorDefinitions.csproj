@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Reports ApricotFramework.Authentication failures as RFC 9457 problem+json, including the bearer challenge and the authorization forbid that are not exceptions and so escape an exception handler, and classifies a failed service-to-service token as a fault of this service rather than of its caller.</Description>
+    <PackageTags>authentication;error-handling;problem-details;rfc9457;aspnetcore</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ApricotFramework.ErrorDefinitions.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../ApricotFramework.Authentication.AspNetCore/ApricotFramework.Authentication.AspNetCore.csproj" />
+  </ItemGroup>
+
+</Project>

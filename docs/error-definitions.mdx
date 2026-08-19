@@ -1,0 +1,73 @@
+---
+title: Error definitions
+description: Why an onward token failure is not a 401, the three codes a client needs text for, and giving the empty 401 and 403 a body.
+---
+
+# Error definitions
+
+```csharp
+builder.Services.AddErrorDefinitions();
+builder.Services.AddJwtBearerAuthentication(builder.Configuration);
+builder.Services.AddAuthorization();
+builder.Services.AddAuthenticationErrorDefinitions();
+
+var app = builder.Build();
+
+app.UseExceptionHandler();
+```
+
+A mapper with no handler does nothing. The host still calls `AddErrorDefinitions` and
+`UseExceptionHandler`; where the handler sits in the pipeline is its decision, not this library's.
+
+## An onward failure is not the caller's fault
+
+This is the reason the package exists rather than a one-line mapping. When a service cannot obtain a
+token for a call of its own, the caller did nothing wrong and can do nothing about it. Answering 401
+would tell them to re-authenticate, which cannot help, and would record a service fault as a client
+error in every dashboard that counts by status class.
+
+| Failure | Kind | Code | Status |
+| --- | --- | --- | --- |
+| The request carried no identified caller | `not_authenticated` | `AUTH_NO_PRINCIPAL` | 401 |
+| A token could not be obtained, and waiting may help | `unavailable` | `AUTH_CLIENT_TOKEN_UNAVAILABLE` | 503 |
+| A token could not be obtained, and waiting will not | `internal` | `AUTH_CLIENT_MISCONFIGURED` | 500 |
+| Authorization refused an identified caller | `access_denied` | `ACCESS_DENIED` | 403 |
+
+Only `ClientAuthenticationFailure.Unavailable` is the retryable case; every other reason is a deployment
+that needs changing, and is reported as an internal fault of this service.
+
+Three codes, because that is how many outcomes a client acts on differently. Which provider, which
+credential and which reason travel in the `reason` payload, so the set a client needs text for does not
+grow every time a new way to fail is recognised. Nothing else from the failure reaches the response: the
+messages name the authority and the client, and a provider's own error description can quote the request
+that carried the secret.
+
+## The empty 401 and 403
+
+Neither is an exception, so neither reaches an exception handler. Without this package a service answers
+in one contract for every failure except the two a client meets most often — which is where a consistent
+error contract is worth the most.
+
+`AddAuthenticationErrorDefinitions` gives both a body. It decorates the framework's authorization result
+handler rather than replacing it, and writes only after it has run, so the status and the
+`WWW-Authenticate` header RFC 6750 requires on a 401 are the framework's own. An answer that already has
+a body — a policy that reported for itself — is left alone.
+
+```http
+HTTP/1.1 401 Unauthorized
+Content-Type: application/problem+json
+WWW-Authenticate: Bearer
+
+{"type":"about:blank","title":"Not authenticated","status":401,
+ "detail":"The request is not authenticated.","instance":"/api/orders",
+ "errors":[{"kind":"not_authenticated","code":"AUTH_NO_PRINCIPAL",
+            "message":"The request is not authenticated."}]}
+```
+
+> **Note.** This covers answers that came from the authorization middleware, which is every endpoint
+> carrying a policy — anything with `[Authorize]` or `[BearerAuthorize]`. A challenge issued from an
+> endpoint by hand is left alone.
+
+Cancellation is deliberately not mapped here. `ApricotFramework.ErrorDefinitions` already classifies it,
+and a cancelled token request throws `OperationCanceledException` rather than a
+`ClientAuthenticationException` so that it reaches that mapper unchanged.

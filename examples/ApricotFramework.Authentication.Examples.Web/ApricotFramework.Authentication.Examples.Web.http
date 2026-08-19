@@ -1,0 +1,24 @@
+@host = http://localhost:5243
+
+### No token: 401 with a problem document, and a WWW-Authenticate header.
+GET {{host}}/api/whoami
+
+### Obtain a service-to-service token from the demo provider, described rather than returned.
+GET {{host}}/api/token
+
+### Anonymous is answered rather than refused.
+GET {{host}}/api/whoami-or-anonymous
+
+### An unreachable provider: 503 unavailable, because waiting may help.
+GET {{host}}/api/downstream-unreachable
+
+### A wrong authority: 500 internal, because waiting will not.
+GET {{host}}/api/downstream-misconfigured
+
+### With a token, /api/whoami reports the client rather than a subject, because a client credentials
+### grant has no resource owner to name. Paste an access token from /api/token into the header below —
+### it is not returned by that endpoint, so take it from the provider directly:
+###   curl -s -u m2m:secret -d grant_type=client_credentials -d scope=api \
+###        https://demo.duendesoftware.com/connect/token
+GET {{host}}/api/whoami
+Authorization: Bearer PASTE_TOKEN_HERE
