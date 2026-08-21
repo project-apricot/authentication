@@ -17,6 +17,7 @@ updates:
           - "xunit*"
           - "Microsoft.NET.Test.Sdk"
           - "coverlet.*"
+          - "Microsoft.Testing.*"
 
   - package-ecosystem: github-actions
     directory: "/"
