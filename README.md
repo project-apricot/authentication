@@ -63,4 +63,4 @@ public async Task<Order> Get(string id, CancellationToken cancellationToken)
 > caller presented a good credential; it is this service that could not present one of its own, so it
 > answers 503 when waiting may help and 500 when it will not.
 
-Full documentation at [projectapricot.dev](https://projectapricot.dev).
+Full documentation at [projectapricot.dev/docs/authentication](https://projectapricot.dev/docs/authentication).
