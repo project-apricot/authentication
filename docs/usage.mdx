@@ -9,11 +9,17 @@ The core package obtains tokens on its own. It reads no configuration, so everyt
 in — which is what lets it run in a console or worker host.
 
 ```csharp
+using ApricotFramework.Authentication;
+using ApricotFramework.Authentication.ClientCredentials;
+using ApricotFramework.Authentication.Hosting;
+
 using var httpClient = new HttpClient();
 
-var authenticator = new ClientCredentialsAuthenticator(httpClient, cache);
+var authenticator = new ClientCredentialsAuthenticator(
+    cache,
+    new StaticTokenRequestHostingContext(httpClient));
 
-var context = await authenticator.AuthenticateAsync(new ClientAuthenticationParameters
+var context = await authenticator.AuthenticateAsync(new TokenRequestParameters
 {
     Authority = "https://idp.example.com",
     ClientId = "orders-service",
@@ -21,11 +27,34 @@ var context = await authenticator.AuthenticateAsync(new ClientAuthenticationPara
     Scopes = ["billing.read"],
 });
 
-request.Headers.Authorization = new AuthenticationHeaderValue(context.TokenType, context.Token);
+request.Headers.Authorization = new AuthenticationHeaderValue(context.TokenType, context.Value);
 ```
 
 Build the header from `TokenType` rather than hard-coding `Bearer`: a provider is entitled to answer
 with a different case, and some servers compare the scheme case-sensitively.
+
+## The hosting context
+
+An authenticator asks the process it runs in for three things on every request: the client to send
+with, how to carry the grant out, and what to fill in where the caller named nothing.
+`StaticTokenRequestHostingContext` answers all three from values fixed when it is built, which is what
+a console or worker process wants. The ASP.NET Core package has one that answers from live
+configuration instead.
+
+```csharp
+var context = new StaticTokenRequestHostingContext(
+    httpClient,
+    new TokenEndpointAuthenticatorOptions { CredentialStyle = ClientCredentialStyle.PostBody },
+    new TokenRequestParameters { Authority = "https://idp.example.com", ClientId = "orders-service" });
+```
+
+Given defaults, a caller then states only what differs — usually the scopes or resources one
+downstream call needs.
+
+This is why subclassing an authenticator means one thing only: **which grant**. Where a request goes
+and who this service is are the context's business, so a single `ClientCredentialsAuthenticator`
+serves a console process and a configured host alike, and adding a grant adds one class rather than
+one per environment.
 
 ## The two calls
 
@@ -39,11 +68,11 @@ var order = await authenticator.DoAuthenticatedAsync(
 ```
 
 Anything the operation itself throws is left alone. Only the failure to obtain a token becomes a
-`ClientAuthenticationException`.
+`TokenRequestException`.
 
 ## Parameters
 
-Every member of `ClientAuthenticationParameters` is optional. An authenticator built over configuration
+Every member of `TokenRequestParameters` is optional. An authenticator built over configuration
 fills what is left unset, so a caller states only what differs — usually the scopes or resources one
 downstream call needs.
 
@@ -57,10 +86,37 @@ downstream call needs.
 An empty list means "none", where an absent one means "use the configured default". The distinction
 matters when a caller wants a token with no scopes at all.
 
+## Where things live
+
+One namespace per grant, so what a host references says which grants it performs. The namespace does
+not say which package a type is in — contracts live in `…Authentication.Abstractions` and
+implementations in `…Authentication`, under the same names, so moving between them is a package
+reference rather than an edit.
+
+| Namespace | Abstractions | Implementation |
+| --- | --- | --- |
+| `ApricotFramework.Authentication` | `ITokenAuthenticator`, `TokenRequestParameters`, `AccessToken`, `TokenRequestException`, `TokenRequestFailure` | `ClientCredentialStyle` |
+| `….ClientCredentials` | `IClientCredentialsAuthenticator` | `ClientCredentialsAuthenticator` |
+| `….TokenExchange` | `ITokenExchangeAuthenticator`, `ISubjectTokenProvider`, `SubjectToken`, `TokenExchangeTokenTypes` | `TokenExchangeAuthenticator` |
+| `….Caching` | `ITokenCache`, `TokenCacheKeys` | |
+| `….Hosting` | | `ITokenRequestHostingContext`, `StaticTokenRequestHostingContext`, `TokenEndpointAuthenticatorOptions` |
+| `….Impl` | | `CachingTokenAuthenticator`, `TokenEndpointAuthenticator` — the machinery a new grant is built on |
+
+`TokenCacheKeys` is in Abstractions despite being code: it is what makes `ITokenCache` safely
+implementable, and a key that two parameter sets can share serves one caller's token to another.
+
+The grant markers are the one place to be careful: `IClientCredentialsAuthenticator` and
+`ITokenExchangeAuthenticator` are siblings, and neither the shared base nor the other grant implements
+the other's. That is what lets a container tell them apart, and what stops a call meant to go out as
+this service going out as somebody else.
+
+Nothing is called "client authentication" except the thing that is: `ClientCredentialStyle` is RFC 6749
+§2.3, how the client proves itself at the token endpoint, and every grant does it — exchange included.
+
 ## Caching
 
-`IClientAuthenticationCache` holds tokens and discovered endpoints. Two entries share a key exactly when
-they deserve the same token, so build keys with `ClientAuthenticationKeys` rather than inventing a
+`ITokenCache` holds tokens and discovered endpoints. Two entries share a key exactly when
+they deserve the same token, so build keys with `TokenCacheKeys` rather than inventing a
 scheme — a key two different parameter sets can share serves one caller's token to another.
 
 The secret is deliberately not part of the key. Including it would discard every valid token the moment
@@ -68,7 +124,7 @@ a secret rotated, and would write a credential into whatever backs the cache.
 
 ## Failure reasons
 
-`ClientAuthenticationException.Reason` says what a caller can do about it.
+`TokenRequestException.Reason` says what a caller can do about it.
 
 | Reason | Meaning | Retryable |
 | --- | --- | --- |

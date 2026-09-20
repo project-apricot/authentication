@@ -1,26 +1,34 @@
 ---
 title: Authentication
-description: Why one section covers both directions, what the three packages contain, and how a token is obtained and reused.
+description: Why one section covers both directions, what the three packages contain, how a token is obtained and reused, and whose authority it carries.
 ---
 
 # Authentication
 
 A microservice authenticates in two directions. It validates the tokens it is given, and it presents
-tokens of its own to the services it calls. Both are configured from one `Authentication` section here,
-because in practice they name the same provider and are deployed together.
+tokens to the services it calls. Both are configured from one `Authentication` section here, because in
+practice they name the same provider and are deployed together.
+
+The outbound half asks a second question: whose authority the token carries. The client credentials
+grant answers "this service"; [token exchange](./token-exchange.mdx) answers "whoever this service is
+serving". Both are available at once and are chosen per call site.
 
 ## Packages
 
 | Package | Contains |
 | --- | --- |
-| `ApricotFramework.Authentication` | The client credentials grant and its contracts. Zero dependencies. |
+| `ApricotFramework.Authentication.Abstractions` | The contracts alone: what a caller asks, what comes back, how it fails. Zero dependencies. |
+| `ApricotFramework.Authentication` | The client credentials and token exchange grants. Zero dependencies. |
 | `ApricotFramework.Authentication.AspNetCore` | JWT bearer validation, configuration binding, registration. |
 | `ApricotFramework.Authentication.ErrorDefinitions` | Answers authentication failures as problem+json. |
 
-The core has no dependencies at all — `HttpClient` and `System.Text.Json` are both in the shared
-framework — so a console or worker host can obtain tokens without referencing ASP.NET Core. It is also
-what a client library depends on to accept an `IClientAuthenticator`, rather than dragging a web
-framework into a gRPC or REST client.
+Reference **Abstractions** from a client library — a gRPC, REST or messaging client — that needs a
+token presented but has no business knowing how one is obtained. It cannot reach the implementation,
+and it does not move when the implementation does.
+
+Reference the **core** from the host that actually obtains tokens. It has no dependencies either —
+`HttpClient` and `System.Text.Json` are both in the shared framework — so a console or worker process
+can obtain tokens without referencing ASP.NET Core.
 
 ## Obtaining a token
 
@@ -41,12 +49,12 @@ join the request already running rather than starting their own.
 
 > **Note.** The cache is process-local. Each instance of a service obtains its own tokens, which needs
 > no shared infrastructure and puts no credential anywhere another host can read. Registering an
-> `IClientAuthenticationCache` before `AddClientAuthentication` replaces it.
+> `ITokenCache` before `AddClientAuthentication` replaces it.
 
 ## Which failures are whose
 
 A failure to obtain a token for an onward call is a fault of the service holding the credentials, never
 of whoever called it. Answering 401 would tell the caller to re-authenticate, which cannot help, and
-would record a service fault as a client error. `ClientAuthenticationException.Reason` is what separates
+would record a service fault as a client error. `TokenRequestException.Reason` is what separates
 the case where waiting helps from the case where a person has to change something — see
 [Error definitions](./error-definitions.mdx).

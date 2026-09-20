@@ -1,3 +1,5 @@
+using ApricotFramework.Authentication.Hosting;
+
 namespace ApricotFramework.Authentication.AspNetCore.Options;
 
 /// <summary>
@@ -15,7 +17,7 @@ public class ClientAuthenticationOptions
     public static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Gets or sets the provider to obtain tokens from, when it differs from the inbound authority.
+    /// Gets or sets the provider to get tokens from when it differs from the inbound authority.
     /// </summary>
     /// <remarks>
     /// Unset means the authority tokens are validated against also issues them, which is the usual
@@ -33,7 +35,7 @@ public class ClientAuthenticationOptions
     /// Gets or sets the secret that authenticates the client.
     /// </summary>
     /// <remarks>
-    /// Supply it through an environment variable or a secrets manager. Bound from configuration, it is
+    /// Supply it through an environment variable or a secrets' manager. Bound from configuration, it is
     /// read from wherever the host's configuration comes from and never written anywhere by this
     /// library.
     /// </remarks>
@@ -60,7 +62,7 @@ public class ClientAuthenticationOptions
     /// <summary>
     /// Gets or sets how far before its stated expiry a token stops being served from cache.
     /// </summary>
-    public TimeSpan TokenExpirySkew { get; set; } = ClientCredentialsAuthenticatorOptions.DefaultTokenExpirySkew;
+    public TimeSpan TokenExpirySkew { get; set; } = TokenEndpointAuthenticatorOptions.DefaultTokenExpirySkew;
 
     /// <summary>
     /// Gets or sets how long a provider's metadata is reused before it is read again.
@@ -69,7 +71,7 @@ public class ClientAuthenticationOptions
     /// Separate from the inbound handler's own refresh interval, which governs signing keys rather than
     /// the endpoint a token is requested from.
     /// </remarks>
-    public TimeSpan MetadataCacheDuration { get; set; } = ClientCredentialsAuthenticatorOptions.DefaultMetadataCacheDuration;
+    public TimeSpan MetadataCacheDuration { get; set; } = TokenEndpointAuthenticatorOptions.DefaultMetadataCacheDuration;
 
     /// <summary>
     /// Gets or sets how long a token request may take before it is abandoned.

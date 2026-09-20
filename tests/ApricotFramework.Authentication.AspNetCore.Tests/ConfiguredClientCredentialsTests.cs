@@ -1,11 +1,11 @@
-using ApricotFramework.Authentication.AspNetCore;
 using ApricotFramework.Authentication.AspNetCore.Extensions;
+using ApricotFramework.Authentication.ClientCredentials;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ApricotFramework.Authentication.AspNetCore.Tests;
 
-public class ConfigAwareClientAuthenticatorTests
+public class ConfiguredClientCredentialsTests
 {
     [Fact]
     public async Task AuthenticateAsync_WithNoParameters_UsesTheConfiguredClient()
@@ -14,10 +14,10 @@ public class ConfigAwareClientAuthenticatorTests
 
         using var provider = Build(handler, Settings());
 
-        var context = await provider.GetRequiredService<IClientAuthenticator>()
+        var context = await provider.GetRequiredService<IClientCredentialsAuthenticator>()
             .AuthenticateAsync(cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal("at-1", context.Token);
+        Assert.Equal("at-1", context.Value);
 
         // Basic of "svc:s3cret", so the configured credentials reached the request.
         Assert.Equal(
@@ -35,7 +35,7 @@ public class ConfigAwareClientAuthenticatorTests
 
         using var provider = Build(handler, settings);
 
-        await provider.GetRequiredService<IClientAuthenticator>()
+        await provider.GetRequiredService<IClientCredentialsAuthenticator>()
             .AuthenticateAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.StartsWith("https://tokens.example.com", handler.TokenRequest.Uri.AbsoluteUri, StringComparison.Ordinal);
@@ -48,7 +48,7 @@ public class ConfigAwareClientAuthenticatorTests
 
         using var provider = Build(handler, Settings());
 
-        await provider.GetRequiredService<IClientAuthenticator>()
+        await provider.GetRequiredService<IClientCredentialsAuthenticator>()
             .AuthenticateAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.StartsWith("https://idp.example.com", handler.TokenRequest.Uri.AbsoluteUri, StringComparison.Ordinal);
@@ -65,7 +65,7 @@ public class ConfigAwareClientAuthenticatorTests
 
         using var provider = Build(handler, settings);
 
-        await provider.GetRequiredService<IClientAuthenticator>()
+        await provider.GetRequiredService<IClientCredentialsAuthenticator>()
             .AuthenticateAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("orders.read orders.write", handler.Field("scope"));
@@ -81,8 +81,8 @@ public class ConfigAwareClientAuthenticatorTests
 
         using var provider = Build(handler, settings);
 
-        await provider.GetRequiredService<IClientAuthenticator>().AuthenticateAsync(
-            new ClientAuthenticationParameters { Scopes = ["billing.read"] },
+        await provider.GetRequiredService<IClientCredentialsAuthenticator>().AuthenticateAsync(
+            new TokenRequestParameters { Scopes = ["billing.read"] },
             TestContext.Current.CancellationToken);
 
         Assert.Equal("billing.read", handler.Field("scope"));
@@ -98,8 +98,8 @@ public class ConfigAwareClientAuthenticatorTests
 
         using var provider = Build(handler, settings);
 
-        await provider.GetRequiredService<IClientAuthenticator>().AuthenticateAsync(
-            new ClientAuthenticationParameters { Scopes = [] },
+        await provider.GetRequiredService<IClientCredentialsAuthenticator>().AuthenticateAsync(
+            new TokenRequestParameters { Scopes = [] },
             TestContext.Current.CancellationToken);
 
         Assert.Null(handler.Field("scope"));
@@ -114,7 +114,7 @@ public class ConfigAwareClientAuthenticatorTests
 
         using var provider = Build(handler, settings);
 
-        await provider.GetRequiredService<IClientAuthenticator>()
+        await provider.GetRequiredService<IClientCredentialsAuthenticator>()
             .AuthenticateAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Null(handler.TokenRequest.Authorization);
@@ -133,10 +133,10 @@ public class ConfigAwareClientAuthenticatorTests
 
         using var provider = Build(handler, settings);
 
-        var context = await provider.GetRequiredService<IClientAuthenticator>()
+        var context = await provider.GetRequiredService<IClientCredentialsAuthenticator>()
             .AuthenticateAsync(cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal("at-1", context.Token);
+        Assert.Equal("at-1", context.Value);
     }
 
     [Fact]
@@ -151,7 +151,7 @@ public class ConfigAwareClientAuthenticatorTests
         using var provider = Build(handler, settings);
 
         await Assert.ThrowsAsync<Microsoft.Extensions.Options.OptionsValidationException>(
-            () => provider.GetRequiredService<IClientAuthenticator>()
+            () => provider.GetRequiredService<IClientCredentialsAuthenticator>()
                 .AuthenticateAsync(cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Empty(handler.Requests);
@@ -163,7 +163,7 @@ public class ConfigAwareClientAuthenticatorTests
         var handler = new RecordingHandler("https://idp.example.com");
 
         using var provider = Build(handler, Settings());
-        var authenticator = provider.GetRequiredService<IClientAuthenticator>();
+        var authenticator = provider.GetRequiredService<IClientCredentialsAuthenticator>();
 
         await authenticator.AuthenticateAsync(cancellationToken: TestContext.Current.CancellationToken);
         await authenticator.AuthenticateAsync(cancellationToken: TestContext.Current.CancellationToken);

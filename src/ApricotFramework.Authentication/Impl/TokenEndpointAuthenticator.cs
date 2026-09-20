@@ -1,22 +1,33 @@
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Text;
-using System.Text.Json;
+using System.Net;
 using System.Text.Json.Serialization.Metadata;
+using System.Text.Json;
+using System.Text;
+using ApricotFramework.Authentication.Caching;
+using ApricotFramework.Authentication.Hosting;
 using ApricotFramework.Authentication.Serialization;
 
 namespace ApricotFramework.Authentication.Impl;
 
 /// <summary>
-/// Obtains tokens with the OAuth 2.0 client credentials grant, discovering the endpoint to ask.
+/// Talks to an OAuth 2.0 token endpoint, discovering where it is and what it answered.
 /// </summary>
 /// <remarks>
-/// Usable without a host: give it an <see cref="HttpClient"/> and a cache and it works in a console or
-/// worker process. Override <see cref="GetHttpClient"/> and <see cref="GetOptions"/> to source either
-/// per request instead, which is what the ASP.NET Core package does.
+/// <para>
+/// Everything here is the same whichever grant is being performed: finding the endpoint, proving
+/// who the client is, sending the form, reading a refusal that may not be the JSON the spec asks
+/// for, and deciding how long the result is worth keeping. A grant adds only its
+/// <see cref="GrantType"/> and whatever fields of its own it sends.
+/// </para>
+/// <para>
+/// Subclassing therefore says which <em>grant</em> is performed and nothing else. Where the request
+/// is sent and what this service's own credentials are come from the
+/// <see cref="ITokenRequestHostingContext"/> instead, so one class per grant serves a console
+/// process and a configured host alike.
+/// </para>
 /// </remarks>
-public class ClientCredentialsAuthenticator : BaseClientAuthenticator
+public abstract class TokenEndpointAuthenticator : CachingTokenAuthenticator
 {
     /// <summary>
     /// Where a provider publishes its metadata, relative to the authority.
@@ -33,103 +44,73 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
     private const long MaxResponseBytes = 1024 * 1024;
 
     /// <summary>
-    /// The longest lifetime honoured from a provider, however long it claims.
+    /// The longest lifetime honored from a provider.
     /// </summary>
     private static readonly TimeSpan MaxTokenLifetime = TimeSpan.FromHours(24);
 
     /// <summary>
-    /// The client requests are sent with, when one was supplied to the constructor.
-    /// </summary>
-    private readonly HttpClient? httpClient;
-
-    /// <summary>
-    /// How the grant is carried out, when it was supplied to the constructor.
-    /// </summary>
-    private readonly ClientCredentialsAuthenticatorOptions options = new();
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ClientCredentialsAuthenticator"/> class.
-    /// </summary>
-    /// <param name="httpClient">The client to send requests with.</param>
-    /// <param name="cache">Where obtained tokens are kept.</param>
-    /// <param name="options">How to carry out the grant, or null for the defaults.</param>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="httpClient"/> or <paramref name="cache"/> is null.
-    /// </exception>
-    public ClientCredentialsAuthenticator(
-        HttpClient httpClient,
-        IClientAuthenticationCache cache,
-        ClientCredentialsAuthenticatorOptions? options = null)
-        : base(cache)
-    {
-        ArgumentNullException.ThrowIfNull(httpClient);
-
-        this.httpClient = httpClient;
-
-        if (options is not null)
-        {
-            this.options = options;
-        }
-    }
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ClientCredentialsAuthenticator"/> class for a
-    /// subclass that supplies its client and options per request.
+    /// Initializes a new instance of the <see cref="TokenEndpointAuthenticator"/> class.
     /// </summary>
     /// <param name="cache">Where obtained tokens are kept.</param>
-    /// <remarks>
-    /// A subclass using this must override both <see cref="GetHttpClient"/> and
-    /// <see cref="GetOptions"/>.
-    /// </remarks>
-    protected ClientCredentialsAuthenticator(IClientAuthenticationCache cache)
+    /// <param name="hostingContext">What the process supplies for every request.</param>
+    /// <exception cref="ArgumentNullException">Thrown when any argument is null.</exception>
+    protected TokenEndpointAuthenticator(ITokenCache cache, ITokenRequestHostingContext hostingContext)
         : base(cache)
     {
+        ArgumentNullException.ThrowIfNull(hostingContext);
+
+        this.HostingContext = hostingContext;
     }
 
     /// <summary>
-    /// Gets the client to send this request with.
+    /// Gets what the process supplies for every request.
     /// </summary>
-    /// <returns>The client to use.</returns>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when no client was supplied and this method was not overridden.
-    /// </exception>
-    /// <remarks>
-    /// A method rather than a property because an implementation over a client factory returns a
-    /// different instance each time, which is how handler rotation keeps working.
-    /// </remarks>
-    protected virtual HttpClient GetHttpClient()
-    {
-        return this.httpClient ?? throw new InvalidOperationException(
-            $"No {nameof(HttpClient)} was supplied, so {this.GetType().Name} must override {nameof(this.GetHttpClient)}.");
-    }
+    protected ITokenRequestHostingContext HostingContext { get; }
 
     /// <summary>
-    /// Gets how the grant is carried out for this request.
+    /// Gets the value sent as <c>grant_type</c>.
     /// </summary>
-    /// <returns>The options to use.</returns>
     /// <remarks>
-    /// A method, so an implementation reading live configuration reflects a change without a restart.
+    /// The one thing every grant must state. Everything else about a grant is optional: a grant
+    /// that sends no parameters of its own leaves <see cref="AppendGrantFields"/> alone.
     /// </remarks>
-    protected virtual ClientCredentialsAuthenticatorOptions GetOptions()
+    protected abstract string GrantType { get; }
+
+    /// <summary>
+    /// Appends the form fields this grant sends beyond the ones every request carries.
+    /// </summary>
+    /// <param name="fields">The form being built, already carrying <c>grant_type</c>.</param>
+    /// <param name="parameters">The effective parameters, with nothing left to fill in.</param>
+    /// <remarks>
+    /// Scope, resource, and the client's own credentials are added for every grant and must not be
+    /// added again here. <paramref name="parameters"/> can carry fields no grant sends; take only
+    /// what this one defines.
+    /// </remarks>
+    protected virtual void AppendGrantFields(ICollection<KeyValuePair<string, string>> fields, TokenRequestParameters parameters)
     {
-        return this.options;
     }
 
     /// <inheritdoc />
-    protected override async Task<AuthenticatedClientContext> GetTokenAndCacheAsync(
-        ClientAuthenticationParameters parameters,
-        CancellationToken cancellationToken)
+    /// <remarks>
+    /// Delegated to the hosting context, which is the one place that knows what this process
+    /// configured.
+    /// </remarks>
+    protected override TokenRequestParameters GetEffectiveParameters(TokenRequestParameters? input)
+    {
+        return this.HostingContext.GetEffectiveParameters(input);
+    }
+
+    /// <inheritdoc />
+    protected override async Task<AccessToken> GetTokenAndCacheAsync(TokenRequestParameters parameters, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
-        var currentOptions = this.GetOptions();
+        var currentOptions = this.HostingContext.GetOptions();
         var authority = ValidateAuthority(parameters.Authority, currentOptions.AllowInsecureAuthority);
 
         if (string.IsNullOrWhiteSpace(parameters.ClientId))
         {
-            throw new ClientAuthenticationException(
-                ClientAuthenticationFailure.InvalidConfiguration,
-                $"No client identifier is configured for authority '{authority}'.");
+            throw new TokenRequestException(TokenRequestFailure.InvalidConfiguration, $"No client identifier is configured for authority '{authority}'.");
         }
 
         var endpoint = await this.Cache.GetTokenEndpointAsync(parameters.Authority!, cancellationToken).ConfigureAwait(false)
@@ -139,12 +120,10 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
 
         var lifetime = ClampLifetime(payload.ExpiresIn);
 
-        var context = new AuthenticatedClientContext
+        var context = new AccessToken
         {
-            Token = payload.AccessToken!,
-            TokenType = string.IsNullOrWhiteSpace(payload.TokenType)
-                ? AuthenticatedClientContext.DefaultTokenType
-                : payload.TokenType,
+            Value = payload.AccessToken!,
+            TokenType = string.IsNullOrWhiteSpace(payload.TokenType) ? AccessToken.DefaultTokenType : payload.TokenType,
             ExpiresAt = lifetime is null ? null : DateTimeOffset.UtcNow.Add(lifetime.Value),
         };
 
@@ -152,45 +131,36 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
         // token immediately or serves an expired one.
         if (lifetime is { } known && known > currentOptions.TokenExpirySkew)
         {
-            await this.Cache.SetTokenAsync(
-                parameters,
-                context,
-                DateTimeOffset.UtcNow.Add(known - currentOptions.TokenExpirySkew),
-                cancellationToken).ConfigureAwait(false);
+            await this.Cache
+                .SetTokenAsync(parameters, context, DateTimeOffset.UtcNow.Add(known - currentOptions.TokenExpirySkew), cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return context;
     }
 
     /// <summary>
-    /// Checks that an authority can be asked for a token at all.
+    /// Checks that an authority can be completely asked for a token.
     /// </summary>
     /// <param name="authority">The configured authority.</param>
     /// <param name="allowInsecure">Whether plain HTTP is permitted.</param>
     /// <returns>The authority as a URL.</returns>
-    /// <exception cref="ClientAuthenticationException">Thrown when it cannot be used.</exception>
+    /// <exception cref="TokenRequestException">Thrown when it cannot be used.</exception>
     private static Uri ValidateAuthority(string? authority, bool allowInsecure)
     {
         if (string.IsNullOrWhiteSpace(authority))
         {
-            throw new ClientAuthenticationException(
-                ClientAuthenticationFailure.InvalidConfiguration,
-                "No authority is configured to obtain a token from.");
+            throw new TokenRequestException(TokenRequestFailure.InvalidConfiguration, "No authority is configured to obtain a token from.");
         }
 
-        if (!Uri.TryCreate(authority, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+        if (!Uri.TryCreate(authority, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
         {
-            throw new ClientAuthenticationException(
-                ClientAuthenticationFailure.InvalidConfiguration,
-                $"The authority '{authority}' is not an absolute http or https URL.");
+            throw new TokenRequestException(TokenRequestFailure.InvalidConfiguration, $"The authority '{authority}' is not an absolute http or https URL.");
         }
 
         if (!allowInsecure && uri.Scheme != Uri.UriSchemeHttps)
         {
-            throw new ClientAuthenticationException(
-                ClientAuthenticationFailure.InvalidConfiguration,
-                $"The authority '{authority}' is not https. Enable insecure authorities to use it, which is intended for development only.");
+            throw new TokenRequestException(TokenRequestFailure.InvalidConfiguration, $"The authority '{authority}' is not https. Enable insecure authorities to use it, which is intended for development only.");
         }
 
         return uri;
@@ -243,7 +213,7 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
     }
 
     /// <summary>
-    /// Decides whether metadata describes the authority that was asked for it.
+    /// Decides whether metadata describes the authority asked for it.
     /// </summary>
     /// <param name="authority">The authority asked.</param>
     /// <param name="issuer">The issuer the document claims to be.</param>
@@ -258,10 +228,7 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
         // A trailing slash is the one difference providers genuinely vary on; the path otherwise
         // distinguishes tenants and is compared exactly.
         return IsSameOrigin(authority, claimed)
-            && string.Equals(
-                authority.AbsolutePath.TrimEnd('/'),
-                claimed.AbsolutePath.TrimEnd('/'),
-                StringComparison.Ordinal);
+            && string.Equals(authority.AbsolutePath.TrimEnd('/'), claimed.AbsolutePath.TrimEnd('/'), StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -282,19 +249,19 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
     /// </summary>
     /// <param name="error">The error code the provider returned.</param>
     /// <returns>The corresponding failure.</returns>
-    private static ClientAuthenticationFailure MapProviderError(string error)
+    private static TokenRequestFailure MapProviderError(string error)
     {
         // Ordinal and case-sensitive: these are protocol tokens with one spelling each, and a code in
         // the wrong case is a provider not following the spec rather than a code to recognize.
         return error switch
         {
             "invalid_client" or "unauthorized_client" or "invalid_grant" =>
-                ClientAuthenticationFailure.InvalidCredentials,
-            "invalid_scope" => ClientAuthenticationFailure.InvalidScope,
+                TokenRequestFailure.InvalidCredentials,
+            "invalid_scope" => TokenRequestFailure.InvalidScope,
             "invalid_request" or "unsupported_grant_type" =>
-                ClientAuthenticationFailure.InvalidConfiguration,
-            "server_error" or "temporarily_unavailable" => ClientAuthenticationFailure.Unavailable,
-            _ => ClientAuthenticationFailure.Unknown,
+                TokenRequestFailure.InvalidConfiguration,
+            "server_error" or "temporarily_unavailable" => TokenRequestFailure.Unavailable,
+            _ => TokenRequestFailure.Unknown,
         };
     }
 
@@ -303,15 +270,15 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
     /// </summary>
     /// <param name="status">The status code returned.</param>
     /// <returns>The corresponding failure.</returns>
-    private static ClientAuthenticationFailure MapStatusCode(HttpStatusCode status)
+    private static TokenRequestFailure MapStatusCode(HttpStatusCode status)
     {
         return status switch
         {
             HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
-                ClientAuthenticationFailure.InvalidCredentials,
+                TokenRequestFailure.InvalidCredentials,
             >= HttpStatusCode.InternalServerError or HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests =>
-                ClientAuthenticationFailure.Unavailable,
-            _ => ClientAuthenticationFailure.Unknown,
+                TokenRequestFailure.Unavailable,
+            _ => TokenRequestFailure.Unknown,
         };
     }
 
@@ -323,11 +290,11 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
     /// <param name="currentOptions">How the grant is carried out.</param>
     /// <param name="cancellationToken">The token to cancel with.</param>
     /// <returns>The token endpoint to request from.</returns>
-    /// <exception cref="ClientAuthenticationException">Thrown when the metadata cannot be trusted.</exception>
+    /// <exception cref="TokenRequestException">Thrown when the metadata cannot be trusted.</exception>
     private async Task<string> DiscoverTokenEndpointAsync(
         Uri authority,
         string authorityKey,
-        ClientCredentialsAuthenticatorOptions currentOptions,
+        TokenEndpointAuthenticatorOptions currentOptions,
         CancellationToken cancellationToken)
     {
         var metadataUrl = new Uri(authority.GetLeftPart(UriPartial.Path).TrimEnd('/') + DiscoveryPath);
@@ -339,27 +306,21 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new ClientAuthenticationException(
-                MapStatusCode(response.StatusCode),
-                $"The metadata for authority '{authority}' could not be read: the provider answered {(int)response.StatusCode}.");
+            throw new TokenRequestException(MapStatusCode(response.StatusCode), $"The metadata for authority '{authority}' could not be read: the provider answered {(int)response.StatusCode}.");
         }
 
         var metadata = await ReadJsonAsync(response, AuthenticationJson.Default.OpenIdProviderMetadata, authority, cancellationToken).ConfigureAwait(false);
 
         if (metadata is null || !IsSameIssuer(authority, metadata.Issuer))
         {
-            throw new ClientAuthenticationException(
-                ClientAuthenticationFailure.InvalidConfiguration,
-                $"The metadata at '{metadataUrl}' describes issuer '{metadata?.Issuer}' rather than the authority it was read from.");
+            throw new TokenRequestException(TokenRequestFailure.InvalidConfiguration, $"The metadata at '{metadataUrl}' describes issuer '{metadata?.Issuer}' rather than the authority it was read from.");
         }
 
         if (!Uri.TryCreate(metadata.TokenEndpoint, UriKind.Absolute, out var endpoint) || !IsSameOrigin(authority, endpoint))
         {
             // A document that names an endpoint elsewhere is how a substituted or tampered response
             // collects the client secret, so it is refused rather than followed.
-            throw new ClientAuthenticationException(
-                ClientAuthenticationFailure.InvalidConfiguration,
-                $"The metadata for authority '{authority}' names token endpoint '{metadata.TokenEndpoint}', which is not on the same host.");
+            throw new TokenRequestException(TokenRequestFailure.InvalidConfiguration, $"The metadata for authority '{authority}' names token endpoint '{metadata.TokenEndpoint}', which is not on the same host.");
         }
 
         await this.Cache.SetTokenEndpointAsync(
@@ -379,19 +340,21 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
     /// <param name="currentOptions">How the grant is carried out.</param>
     /// <param name="cancellationToken">The token to cancel with.</param>
     /// <returns>The provider's answer, known to carry a token.</returns>
-    /// <exception cref="ClientAuthenticationException">Thrown when no token was issued.</exception>
+    /// <exception cref="TokenRequestException">Thrown when no token was issued.</exception>
     private async Task<TokenEndpointResponse> RequestTokenAsync(
         string endpoint,
-        ClientAuthenticationParameters parameters,
-        ClientCredentialsAuthenticatorOptions currentOptions,
+        TokenRequestParameters parameters,
+        TokenEndpointAuthenticatorOptions currentOptions,
         CancellationToken cancellationToken)
     {
         var authority = new Uri(endpoint);
 
         var fields = new List<KeyValuePair<string, string>>
         {
-            new("grant_type", "client_credentials"),
+            new("grant_type", this.GrantType),
         };
+
+        this.AppendGrantFields(fields, parameters);
 
         var scopes = parameters.Scopes ?? [];
 
@@ -436,28 +399,28 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
             // The error code, never the description: providers echo the request into it, and a request
             // to a token endpoint carries a secret.
             throw refusal?.Error is { Length: > 0 } code
-                ? new ClientAuthenticationException(
+                ? new TokenRequestException(
                     MapProviderError(code),
                     $"The provider at '{authority}' refused client '{parameters.ClientId}': {code}.")
-                : new ClientAuthenticationException(
+                : new TokenRequestException(
                     MapStatusCode(response.StatusCode),
                     $"The provider at '{authority}' answered {(int)response.StatusCode} for client '{parameters.ClientId}'.");
         }
 
         var payload = await ReadJsonAsync(response, AuthenticationJson.Default.TokenEndpointResponse, authority, cancellationToken).ConfigureAwait(false);
 
-        // Providers exist that report a refusal with 200, so the code is honoured either way.
+        // Providers exist that report a refusal with 200, so the code is honored either way.
         if (payload?.Error is { Length: > 0 } error)
         {
-            throw new ClientAuthenticationException(
+            throw new TokenRequestException(
                 MapProviderError(error),
                 $"The provider at '{authority}' refused client '{parameters.ClientId}': {error}.");
         }
 
         if (payload is null || string.IsNullOrWhiteSpace(payload.AccessToken))
         {
-            throw new ClientAuthenticationException(
-                ClientAuthenticationFailure.Unknown,
+            throw new TokenRequestException(
+                TokenRequestFailure.Unknown,
                 $"The provider at '{authority}' answered successfully but issued no token for client '{parameters.ClientId}'.");
         }
 
@@ -471,7 +434,7 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
     /// <param name="authority">The authority being addressed, for the message.</param>
     /// <param name="cancellationToken">The token to cancel with.</param>
     /// <returns>The response.</returns>
-    /// <exception cref="ClientAuthenticationException">Thrown when the provider could not be reached.</exception>
+    /// <exception cref="TokenRequestException">Thrown when the provider could not be reached.</exception>
     private async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         Uri authority,
@@ -479,14 +442,14 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
     {
         try
         {
-            return await this.GetHttpClient()
+            return await this.HostingContext.GetHttpClient()
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (HttpRequestException exception)
         {
-            throw new ClientAuthenticationException(
-                ClientAuthenticationFailure.Unavailable,
+            throw new TokenRequestException(
+                TokenRequestFailure.Unavailable,
                 $"The provider at '{authority}' could not be reached.",
                 exception);
         }
@@ -494,8 +457,8 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
         {
             // A cancellation nobody asked for is the client's timeout, which is the provider being
             // slow rather than the caller giving up.
-            throw new ClientAuthenticationException(
-                ClientAuthenticationFailure.Unavailable,
+            throw new TokenRequestException(
+                TokenRequestFailure.Unavailable,
                 $"The provider at '{authority}' did not answer in time.",
                 exception);
         }
@@ -537,7 +500,7 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
     /// <param name="authority">The authority being addressed, for the message.</param>
     /// <param name="cancellationToken">The token to cancel with.</param>
     /// <returns>The document, or null when the body was empty.</returns>
-    /// <exception cref="ClientAuthenticationException">Thrown when the body could not be read.</exception>
+    /// <exception cref="TokenRequestException">Thrown when the body could not be read.</exception>
     private static async Task<T?> ReadJsonAsync<T>(
         HttpResponseMessage response,
         JsonTypeInfo<T> typeInfo,
@@ -553,15 +516,15 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
         }
         catch (JsonException exception)
         {
-            throw new ClientAuthenticationException(
-                ClientAuthenticationFailure.Unknown,
+            throw new TokenRequestException(
+                TokenRequestFailure.Unknown,
                 $"The provider at '{authority}' answered with something other than the expected JSON.",
                 exception);
         }
         catch (HttpRequestException exception)
         {
-            throw new ClientAuthenticationException(
-                ClientAuthenticationFailure.Unavailable,
+            throw new TokenRequestException(
+                TokenRequestFailure.Unavailable,
                 $"The answer from the provider at '{authority}' could not be read, or exceeded {MaxResponseBytes} bytes.",
                 exception);
         }
@@ -569,8 +532,8 @@ public class ClientCredentialsAuthenticator : BaseClientAuthenticator
         {
             // What ReadFromJsonAsync reports for a content type it will not parse, such as the HTML
             // error page a proxy in front of the provider answers with.
-            throw new ClientAuthenticationException(
-                ClientAuthenticationFailure.Unknown,
+            throw new TokenRequestException(
+                TokenRequestFailure.Unknown,
                 $"The provider at '{authority}' answered with an unexpected content type.",
                 exception);
         }

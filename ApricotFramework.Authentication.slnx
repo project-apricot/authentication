@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/ApricotFramework.Authentication.Abstractions/ApricotFramework.Authentication.Abstractions.csproj" />
     <Project Path="src/ApricotFramework.Authentication/ApricotFramework.Authentication.csproj" />
     <Project Path="src/ApricotFramework.Authentication.AspNetCore/ApricotFramework.Authentication.AspNetCore.csproj" />
     <Project Path="src/ApricotFramework.Authentication.ErrorDefinitions/ApricotFramework.Authentication.ErrorDefinitions.csproj" />

@@ -11,3 +11,8 @@ indent_size = 4
 [*.{json,yml,yaml,md,mdx,csproj,props,slnx,config}]
 indent_size = 2
 
+[*.cs]
+# Folders are namespaces, measured against RootNamespace rather than the project name. A package
+# whose assembly name carries a suffix the namespaces do not - Abstractions - sets RootNamespace,
+# and then this rule keeps every other folder honest instead of leaving it to review.
+dotnet_diagnostic.IDE0130.severity = error

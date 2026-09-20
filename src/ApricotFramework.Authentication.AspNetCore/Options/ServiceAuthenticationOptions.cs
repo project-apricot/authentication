@@ -19,7 +19,7 @@ public class ServiceAuthenticationOptions
     /// The token types accepted when the configuration names none.
     /// </summary>
     /// <remarks>
-    /// <c>at+jwt</c> is what RFC 9068 defines and what IdentityServer emits. Azure AD, Auth0 and
+    /// <c>at+jwt</c> is what RFC 9068 defines and what IdentityServer emits. Azure AD, Auth0, and
     /// Keycloak emit no <c>typ</c> at all, so those need this set explicitly — to their own value, or
     /// to an empty list to accept any.
     /// </remarks>
@@ -29,7 +29,7 @@ public class ServiceAuthenticationOptions
     /// Gets or sets the issuer whose tokens are accepted.
     /// </summary>
     /// <remarks>
-    /// Also where signing keys are read from, so it has to be reachable from the service at startup.
+    /// Also, where signing keys are read from, so it has to be reachable from the service at startup.
     /// </remarks>
     public string? Authority { get; set; }
 
@@ -57,7 +57,7 @@ public class ServiceAuthenticationOptions
     /// <remarks>
     /// Unset means <see cref="DefaultValidTokenTypes"/>. Configuring it replaces that default rather
     /// than adding to it. To accept any type, turn <see cref="ValidateTokenType"/> off — an empty list
-    /// here cannot express it, because the configuration binder reads an empty array as nothing at all.
+    /// here cannot express it because the configuration binder reads an empty array as nothing at all.
     /// </remarks>
     public IList<string>? ValidTokenTypes { get; set; }
 
@@ -114,7 +114,7 @@ public class ServiceAuthenticationOptions
     /// </summary>
     /// <remarks>
     /// Unset leaves the framework default of five minutes, which is generous where clocks are
-    /// synchronised.
+    /// synchronized.
     /// </remarks>
     public TimeSpan? ClockSkew { get; set; }
 

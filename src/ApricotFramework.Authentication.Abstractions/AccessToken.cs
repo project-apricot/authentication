@@ -3,7 +3,11 @@ namespace ApricotFramework.Authentication;
 /// <summary>
 /// An access token the caller may present, and what is known about it.
 /// </summary>
-public class AuthenticatedClientContext
+/// <remarks>
+/// The same shape as <see cref="TokenExchange.SubjectToken"/>, which is the token going the other
+/// way: one is what this service was given, the other is what it got.
+/// </remarks>
+public class AccessToken
 {
     /// <summary>
     /// The scheme assumed when a provider names none, which every OAuth 2.0 provider in practice uses.
@@ -13,7 +17,7 @@ public class AuthenticatedClientContext
     /// <summary>
     /// Gets the access token.
     /// </summary>
-    public required string Token { get; init; }
+    public required string Value { get; init; }
 
     /// <summary>
     /// Gets the scheme the token is presented under, as the provider named it.

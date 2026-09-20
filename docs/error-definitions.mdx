@@ -33,7 +33,7 @@ error in every dashboard that counts by status class.
 | A token could not be obtained, and waiting will not | `internal` | `AUTH_CLIENT_MISCONFIGURED` | 500 |
 | Authorization refused an identified caller | `access_denied` | `ACCESS_DENIED` | 403 |
 
-Only `ClientAuthenticationFailure.Unavailable` is the retryable case; every other reason is a deployment
+Only `TokenRequestFailure.Unavailable` is the retryable case; every other reason is a deployment
 that needs changing, and is reported as an internal fault of this service.
 
 Three codes, because that is how many outcomes a client acts on differently. Which provider, which
@@ -70,4 +70,4 @@ WWW-Authenticate: Bearer
 
 Cancellation is deliberately not mapped here. `ApricotFramework.ErrorDefinitions` already classifies it,
 and a cancelled token request throws `OperationCanceledException` rather than a
-`ClientAuthenticationException` so that it reaches that mapper unchanged.
+`TokenRequestException` so that it reaches that mapper unchanged.

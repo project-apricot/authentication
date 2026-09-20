@@ -1,7 +1,9 @@
 using System.Text;
+using ApricotFramework.Authentication.AspNetCore.Caching;
 using ApricotFramework.Authentication.AspNetCore.Extensions;
-using ApricotFramework.Authentication.AspNetCore.Impl;
 using ApricotFramework.Authentication.AspNetCore.Options;
+using ApricotFramework.Authentication.Caching;
+using ApricotFramework.Authentication.ClientCredentials;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -226,8 +228,8 @@ public class AuthenticationRegistrationTests
     {
         using var provider = Build(Settings(), resourceServer: false);
 
-        Assert.IsType<ConfigAwareClientAuthenticator>(provider.GetRequiredService<IClientAuthenticator>());
-        Assert.IsType<InMemoryClientAuthenticationCache>(provider.GetRequiredService<IClientAuthenticationCache>());
+        Assert.IsType<ClientCredentialsAuthenticator>(provider.GetRequiredService<IClientCredentialsAuthenticator>());
+        Assert.IsType<InMemoryTokenCache>(provider.GetRequiredService<ITokenCache>());
     }
 
     [Fact]
@@ -238,9 +240,9 @@ public class AuthenticationRegistrationTests
         using var provider = Build(
             Settings(),
             resourceServer: false,
-            configure: services => services.AddSingleton<IClientAuthenticationCache, SubstituteCache>());
+            configure: services => services.AddSingleton<ITokenCache, SubstituteCache>());
 
-        Assert.IsType<SubstituteCache>(provider.GetRequiredService<IClientAuthenticationCache>());
+        Assert.IsType<SubstituteCache>(provider.GetRequiredService<ITokenCache>());
     }
 
     [Fact]
@@ -388,18 +390,18 @@ public class AuthenticationRegistrationTests
         return services.BuildServiceProvider(validateScopes: true);
     }
 
-    private sealed class SubstituteCache : IClientAuthenticationCache
+    private sealed class SubstituteCache : ITokenCache
     {
-        public ValueTask<AuthenticatedClientContext?> GetTokenAsync(
-            ClientAuthenticationParameters parameters,
+        public ValueTask<AccessToken?> GetTokenAsync(
+            TokenRequestParameters parameters,
             CancellationToken cancellationToken = default)
         {
-            return ValueTask.FromResult<AuthenticatedClientContext?>(null);
+            return ValueTask.FromResult<AccessToken?>(null);
         }
 
         public ValueTask SetTokenAsync(
-            ClientAuthenticationParameters parameters,
-            AuthenticatedClientContext context,
+            TokenRequestParameters parameters,
+            AccessToken context,
             DateTimeOffset expiresAt,
             CancellationToken cancellationToken = default)
         {

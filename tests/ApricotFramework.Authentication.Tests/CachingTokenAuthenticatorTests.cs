@@ -1,9 +1,9 @@
-using ApricotFramework.Authentication;
+using ApricotFramework.Authentication.Caching;
 using ApricotFramework.Authentication.Impl;
 
 namespace ApricotFramework.Authentication.Tests;
 
-public class BaseClientAuthenticatorTests
+public class CachingTokenAuthenticatorTests
 {
     [Fact]
     public async Task DoAuthenticatedAsync_PassesTheObtainedToken()
@@ -11,7 +11,7 @@ public class BaseClientAuthenticatorTests
         var authenticator = Authenticator();
 
         var seen = await authenticator.DoAuthenticatedAsync(
-            (context, _) => Task.FromResult(context.Token),
+            (context, _) => Task.FromResult(context.Value),
             Parameters(),
             TestContext.Current.CancellationToken);
 
@@ -49,10 +49,10 @@ public class BaseClientAuthenticatorTests
             new TestTokenCache(),
             _ => throw new InvalidTimeZoneException("something unrelated"));
 
-        var failure = await Assert.ThrowsAsync<ClientAuthenticationException>(
+        var failure = await Assert.ThrowsAsync<TokenRequestException>(
             () => authenticator.AuthenticateAsync(Parameters(), TestContext.Current.CancellationToken));
 
-        Assert.Equal(ClientAuthenticationFailure.Unknown, failure.Reason);
+        Assert.Equal(TokenRequestFailure.Unknown, failure.Reason);
         Assert.IsType<InvalidTimeZoneException>(failure.InnerException);
     }
 
@@ -61,14 +61,14 @@ public class BaseClientAuthenticatorTests
     {
         var authenticator = new StubAuthenticator(
             new TestTokenCache(),
-            _ => throw new ClientAuthenticationException(
-                ClientAuthenticationFailure.InvalidCredentials,
+            _ => throw new TokenRequestException(
+                TokenRequestFailure.InvalidCredentials,
                 "rejected"));
 
-        var failure = await Assert.ThrowsAsync<ClientAuthenticationException>(
+        var failure = await Assert.ThrowsAsync<TokenRequestException>(
             () => authenticator.AuthenticateAsync(Parameters(), TestContext.Current.CancellationToken));
 
-        Assert.Equal(ClientAuthenticationFailure.InvalidCredentials, failure.Reason);
+        Assert.Equal(TokenRequestFailure.InvalidCredentials, failure.Reason);
         Assert.Null(failure.InnerException);
     }
 
@@ -94,14 +94,14 @@ public class BaseClientAuthenticatorTests
         return new StubAuthenticator(new TestTokenCache(), _ => Task.FromResult(Context()));
     }
 
-    private static AuthenticatedClientContext Context()
+    private static AccessToken Context()
     {
-        return new AuthenticatedClientContext { Token = "at-1" };
+        return new AccessToken { Value = "at-1" };
     }
 
-    private static ClientAuthenticationParameters Parameters()
+    private static TokenRequestParameters Parameters()
     {
-        return new ClientAuthenticationParameters
+        return new TokenRequestParameters
         {
             Authority = "https://idp.example.com",
             ClientId = "svc",
@@ -109,14 +109,14 @@ public class BaseClientAuthenticatorTests
     }
 
     private class StubAuthenticator(
-        IClientAuthenticationCache cache,
-        Func<ClientAuthenticationParameters, Task<AuthenticatedClientContext>> fetch)
-        : BaseClientAuthenticator(cache)
+        ITokenCache cache,
+        Func<TokenRequestParameters, Task<AccessToken>> fetch)
+        : CachingTokenAuthenticator(cache)
     {
-        public ClientAuthenticationParameters? LastParameters { get; private set; }
+        public TokenRequestParameters? LastParameters { get; private set; }
 
-        protected override Task<AuthenticatedClientContext> GetTokenAndCacheAsync(
-            ClientAuthenticationParameters parameters,
+        protected override Task<AccessToken> GetTokenAndCacheAsync(
+            TokenRequestParameters parameters,
             CancellationToken cancellationToken)
         {
             this.LastParameters = parameters;
@@ -125,12 +125,12 @@ public class BaseClientAuthenticatorTests
         }
     }
 
-    private sealed class SubclassWithDefaults(IClientAuthenticationCache cache)
+    private sealed class SubclassWithDefaults(ITokenCache cache)
         : StubAuthenticator(cache, _ => Task.FromResult(Context()))
     {
-        protected override ClientAuthenticationParameters GetEffectiveParameters(ClientAuthenticationParameters? input)
+        protected override TokenRequestParameters GetEffectiveParameters(TokenRequestParameters? input)
         {
-            return new ClientAuthenticationParameters
+            return new TokenRequestParameters
             {
                 Authority = input?.Authority ?? "https://configured.example.com",
                 ClientId = input?.ClientId ?? "configured",

@@ -35,7 +35,7 @@ public class AuthenticationExceptionMapperTests
         // Retryable, and a fault of a dependency rather than of this service's configuration.
         var errors = Mapper().Map(
             new DefaultHttpContext(),
-            new ClientAuthenticationException(ClientAuthenticationFailure.Unavailable, "unreachable"));
+            new TokenRequestException(TokenRequestFailure.Unavailable, "unreachable"));
 
         var error = Assert.Single(errors!);
 
@@ -45,18 +45,18 @@ public class AuthenticationExceptionMapperTests
     }
 
     [Theory]
-    [InlineData(ClientAuthenticationFailure.InvalidCredentials)]
-    [InlineData(ClientAuthenticationFailure.InvalidConfiguration)]
-    [InlineData(ClientAuthenticationFailure.InvalidScope)]
-    [InlineData(ClientAuthenticationFailure.Unknown)]
+    [InlineData(TokenRequestFailure.InvalidCredentials)]
+    [InlineData(TokenRequestFailure.InvalidConfiguration)]
+    [InlineData(TokenRequestFailure.InvalidScope)]
+    [InlineData(TokenRequestFailure.Unknown)]
     public void Map_WhenThisServiceCouldNotAuthenticateItself_ReportsInternalRatherThanNotAuthenticated(
-        ClientAuthenticationFailure reason)
+        TokenRequestFailure reason)
     {
         // The whole point of the bridge: the caller presented a good credential, so answering 401 would
         // tell them to do something that cannot help and would blame them for our misconfiguration.
         var errors = Mapper().Map(
             new DefaultHttpContext(),
-            new ClientAuthenticationException(reason, "rejected"));
+            new TokenRequestException(reason, "rejected"));
 
         var error = Assert.Single(errors!);
 
@@ -70,12 +70,12 @@ public class AuthenticationExceptionMapperTests
     {
         var errors = Mapper().Map(
             new DefaultHttpContext(),
-            new ClientAuthenticationException(ClientAuthenticationFailure.InvalidScope, "refused"));
+            new TokenRequestException(TokenRequestFailure.InvalidScope, "refused"));
 
         var error = Assert.Single(errors!);
 
         Assert.NotNull(error.Payload);
-        Assert.Equal(nameof(ClientAuthenticationFailure.InvalidScope), error.Payload["reason"]);
+        Assert.Equal(nameof(TokenRequestFailure.InvalidScope), error.Payload["reason"]);
     }
 
     [Fact]
@@ -83,8 +83,8 @@ public class AuthenticationExceptionMapperTests
     {
         // The message names the authority and the client, and a provider's own error description can
         // quote the request that carried the secret.
-        var failure = new ClientAuthenticationException(
-            ClientAuthenticationFailure.InvalidCredentials,
+        var failure = new TokenRequestException(
+            TokenRequestFailure.InvalidCredentials,
             "The provider at 'https://idp.internal.example.com' refused client 'orders-svc': invalid_client.");
 
         var errors = Mapper().Map(new DefaultHttpContext(), failure);

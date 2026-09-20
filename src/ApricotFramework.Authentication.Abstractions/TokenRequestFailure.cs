@@ -7,7 +7,7 @@ namespace ApricotFramework.Authentication;
 /// The distinction that matters operationally is whether waiting helps. <see cref="Unavailable"/>
 /// says it might; everything else says a person has to change something.
 /// </remarks>
-public enum ClientAuthenticationFailure
+public enum TokenRequestFailure
 {
     /// <summary>
     /// The provider answered, but not in a way this library could make sense of.

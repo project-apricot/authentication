@@ -1,14 +1,14 @@
-namespace ApricotFramework.Authentication;
+namespace ApricotFramework.Authentication.Caching;
 
 /// <summary>
 /// Holds tokens and discovered endpoints between calls.
 /// </summary>
 /// <remarks>
 /// Asynchronous because the useful implementations beyond a process-local one are networked. Build
-/// keys with <see cref="ClientAuthenticationKeys"/> rather than inventing a scheme: a key that two
+/// keys with <see cref="TokenCacheKeys"/> rather than inventing a scheme: a key that two
 /// different parameter sets can share serves one caller's token to another.
 /// </remarks>
-public interface IClientAuthenticationCache
+public interface ITokenCache
 {
     /// <summary>
     /// Gets the cached token for these parameters if one is still held.
@@ -16,9 +16,7 @@ public interface IClientAuthenticationCache
     /// <param name="parameters">The parameters the token was obtained for.</param>
     /// <param name="cancellationToken">The token to cancel with.</param>
     /// <returns>The cached token, or <see langword="null"/>.</returns>
-    ValueTask<AuthenticatedClientContext?> GetTokenAsync(
-        ClientAuthenticationParameters parameters,
-        CancellationToken cancellationToken = default);
+    ValueTask<AccessToken?> GetTokenAsync(TokenRequestParameters parameters, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Caches a token until the given instant.
@@ -29,11 +27,7 @@ public interface IClientAuthenticationCache
     /// When to stop serving it. Earlier than the token's own expiry, by the configured skew.
     /// </param>
     /// <param name="cancellationToken">The token to cancel with.</param>
-    ValueTask SetTokenAsync(
-        ClientAuthenticationParameters parameters,
-        AuthenticatedClientContext context,
-        DateTimeOffset expiresAt,
-        CancellationToken cancellationToken = default);
+    ValueTask SetTokenAsync(TokenRequestParameters parameters, AccessToken context, DateTimeOffset expiresAt, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the cached token endpoint for an authority if one is still held.
@@ -50,9 +44,5 @@ public interface IClientAuthenticationCache
     /// <param name="tokenEndpoint">The endpoint it published.</param>
     /// <param name="expiresAt">When to read the metadata again.</param>
     /// <param name="cancellationToken">The token to cancel with.</param>
-    ValueTask SetTokenEndpointAsync(
-        string authority,
-        string tokenEndpoint,
-        DateTimeOffset expiresAt,
-        CancellationToken cancellationToken = default);
+    ValueTask SetTokenEndpointAsync(string authority, string tokenEndpoint, DateTimeOffset expiresAt, CancellationToken cancellationToken = default);
 }

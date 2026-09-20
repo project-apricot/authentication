@@ -1,6 +1,6 @@
 ---
 title: ASP.NET Core
-description: Registration, every setting in the Authentication section, reading the principal, and what is checked at startup.
+description: Registration, every setting in the Authentication section, calling as the caller, reading the principal, and what is checked at startup.
 ---
 
 # ASP.NET Core
@@ -14,6 +14,41 @@ That registers both directions: inbound bearer validation, and the client that o
 onward calls. A service that only calls others and serves nothing authenticated calls
 `AddClientAuthentication(builder.Configuration)` instead, which registers the client alone and does not
 ask for an audience.
+
+Token exchange is **not** in that bundle, and the omission is deliberate. Bundling the client
+credentials grant is free — lazily constructed singletons, a named `HttpClient`, some bound options.
+The exchange is not: it registers `IHttpContextAccessor`, which a bearer-validating host does not
+otherwise have, and once registered the http context factory writes a static `AsyncLocal` on every
+request whether or not anything reads it. The second reason matters more. A service has an identity
+of its own by virtue of being configured; *acting as somebody else* is an architectural decision, and
+it should appear in the host that made it rather than arrive with bearer validation.
+
+## Calling as the caller
+
+```csharp
+builder.Services.AddTokenExchangeAuthentication(builder.Configuration);
+```
+
+Adds an `ITokenExchangeAuthenticator`, which obtains a token for whoever this service is serving rather
+than for the service itself. It is a separate registration from `IClientCredentialsAuthenticator` and does not
+replace it, so adding it cannot change how an existing call authenticates; order between the two does
+not matter. Nothing in the settings changes — the same `Authentication:Client` credentials are used —
+and the subject comes from the request being served. See
+[Token exchange](./token-exchange.mdx).
+
+## What gets registered
+
+| Service | Implementation |
+| --- | --- |
+| `ITokenRequestHostingContext` | `ConfiguredTokenRequestHostingContext` — reads the section on each call, so a reload takes effect without a restart |
+| `ITokenCache` | `InMemoryTokenCache` |
+| `IClientCredentialsAuthenticator` | `ClientCredentialsAuthenticator` |
+| `ITokenExchangeAuthenticator` | `TokenExchangeAuthenticator`, when the exchange is added |
+| `ISubjectTokenProvider` | `HttpContextSubjectTokenProvider`, when the exchange is added |
+
+Every one is conditional, so registering your own first keeps it. Replacing
+`ITokenRequestHostingContext` changes how token requests are sent for **both** grants at once, which
+is usually what is meant — this service is who it is either way.
 
 ## Settings
 
