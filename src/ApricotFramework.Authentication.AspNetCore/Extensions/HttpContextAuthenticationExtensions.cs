@@ -25,7 +25,7 @@ public static class HttpContextAuthenticationExtensions
     /// The claims a provider may name the calling client in, most standard first.
     /// </summary>
     /// <remarks>
-    /// <c>client_id</c> is RFC 9068 and IdentityServer; <c>azp</c> is Auth0, Keycloak and Google;
+    /// <c>client_id</c> is RFC 9068 and IdentityServer; <c>azp</c> is Auth0, Keycloak, and Google;
     /// <c>appid</c> is Azure AD v1. Reading all three is what makes the client identity portable.
     /// </remarks>
     private static readonly string[] ClientClaims = ["client_id", "azp", "appid"];
@@ -38,7 +38,7 @@ public static class HttpContextAuthenticationExtensions
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="httpContext"/> is null.</exception>
     /// <exception cref="NotAuthenticatedException">Thrown when the request carries no principal.</exception>
     /// <remarks>
-    /// Requires only that the request is authenticated. It does not require a subject, because a
+    /// Requires only that the request is authenticated. It does not require a subject because a
     /// service-to-service token legitimately has none.
     /// </remarks>
     public static AuthenticatedPrincipal GetPrincipal(this HttpContext httpContext)

@@ -7,6 +7,4 @@ namespace ApricotFramework.Authentication.Serialization;
 /// </summary>
 [JsonSerializable(typeof(TokenEndpointResponse))]
 [JsonSerializable(typeof(OpenIdProviderMetadata))]
-internal sealed partial class AuthenticationJson : JsonSerializerContext
-{
-}
+internal sealed partial class AuthenticationJson : JsonSerializerContext;

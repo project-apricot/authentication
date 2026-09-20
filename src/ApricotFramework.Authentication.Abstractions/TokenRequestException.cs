@@ -8,39 +8,39 @@ namespace ApricotFramework.Authentication;
 /// request with 401 because of one misattributes it. <see cref="Reason"/> is what a handler classifies
 /// on.
 /// </remarks>
-public class ClientAuthenticationException : Exception
+public class TokenRequestException : Exception
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="ClientAuthenticationException"/> class.
+    /// Initializes a new instance of the <see cref="TokenRequestException"/> class.
     /// </summary>
-    public ClientAuthenticationException()
+    public TokenRequestException()
     {
     }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="ClientAuthenticationException"/> class.
+    /// Initializes a new instance of the <see cref="TokenRequestException"/> class.
     /// </summary>
     /// <param name="message">The message describing the failure.</param>
-    public ClientAuthenticationException(string message) : base(message)
+    public TokenRequestException(string message) : base(message)
     {
     }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="ClientAuthenticationException"/> class.
+    /// Initializes a new instance of the <see cref="TokenRequestException"/> class.
     /// </summary>
     /// <param name="message">The message describing the failure.</param>
     /// <param name="innerException">The underlying failure.</param>
-    public ClientAuthenticationException(string message, Exception? innerException) : base(message, innerException)
+    public TokenRequestException(string message, Exception? innerException) : base(message, innerException)
     {
     }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="ClientAuthenticationException"/> class.
+    /// Initializes a new instance of the <see cref="TokenRequestException"/> class.
     /// </summary>
     /// <param name="reason">Why the token could not be obtained.</param>
     /// <param name="message">The message describing the failure.</param>
     /// <param name="innerException">The underlying failure, if any.</param>
-    public ClientAuthenticationException(ClientAuthenticationFailure reason, string message, Exception? innerException = null)
+    public TokenRequestException(TokenRequestFailure reason, string message, Exception? innerException = null)
         : base(message, innerException)
     {
         this.Reason = reason;
@@ -49,5 +49,5 @@ public class ClientAuthenticationException : Exception
     /// <summary>
     /// Gets why the token could not be obtained.
     /// </summary>
-    public ClientAuthenticationFailure Reason { get; }
+    public TokenRequestFailure Reason { get; }
 }

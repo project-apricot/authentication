@@ -1,10 +1,17 @@
+using ApricotFramework.Authentication.AspNetCore.Caching;
+using ApricotFramework.Authentication.AspNetCore.Hosting;
 using ApricotFramework.Authentication.AspNetCore.Impl;
 using ApricotFramework.Authentication.AspNetCore.Options;
-using Microsoft.AspNetCore.Authentication;
+using ApricotFramework.Authentication.AspNetCore.TokenExchange;
+using ApricotFramework.Authentication.Caching;
+using ApricotFramework.Authentication.ClientCredentials;
+using ApricotFramework.Authentication.Hosting;
+using ApricotFramework.Authentication.TokenExchange;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace ApricotFramework.Authentication.AspNetCore.Extensions;
@@ -28,7 +35,7 @@ public static class AuthenticationRegistrationExtensions
     /// </exception>
     /// <remarks>
     /// Both halves, because the client costs nothing until something asks it for a token. To configure
-    /// the handler further, configure <see cref="JwtBearerOptions"/> for the same scheme afterwards: a
+    /// the handler further, configure <see cref="JwtBearerOptions"/> for the same scheme afterward: a
     /// later configuration wins, so nothing here has to be undone.
     /// </remarks>
     public static AuthenticationBuilder AddJwtBearerAuthentication(
@@ -54,7 +61,7 @@ public static class AuthenticationRegistrationExtensions
 
         builder.AddJwtBearer(scheme);
 
-        // Configured through the options pipeline rather than the AddJwtBearer callback, because the
+        // Configured through the option pipeline rather than the AddJwtBearer callback, because the
         // settings have to be resolved from the container to be read at all.
         services
             .AddOptions<JwtBearerOptions>(scheme)
@@ -65,11 +72,11 @@ public static class AuthenticationRegistrationExtensions
     }
 
     /// <summary>
-    /// Adds the client that obtains tokens for calls this service makes to another.
+    /// Adds the client that gets tokens for calls this service makes to another.
     /// </summary>
     /// <param name="services">The services.</param>
     /// <param name="configuration">The configuration supplying the <c>Authentication</c> section.</param>
-    /// <returns>The same collection, so calls chain.</returns>
+    /// <returns>The same collection, so calls a chain.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="services"/> or <paramref name="configuration"/> is null.
     /// </exception>
@@ -102,8 +109,67 @@ public static class AuthenticationRegistrationExtensions
             .ConfigurePrimaryHttpMessageHandler(static provider =>
                 CreateTokenHandler(provider.GetRequiredService<IOptions<ServiceAuthenticationOptions>>().Value));
 
-        services.TryAddSingleton<IClientAuthenticationCache, InMemoryClientAuthenticationCache>();
-        services.TryAddSingleton<IClientAuthenticator, ConfigAwareClientAuthenticator>();
+        services.TryAddSingleton<ITokenRequestHostingContext, ConfiguredTokenRequestHostingContext>();
+        services.TryAddSingleton<ITokenCache, InMemoryTokenCache>();
+        services.TryAddSingleton<IClientCredentialsAuthenticator, ClientCredentialsAuthenticator>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the client that gets tokens on behalf of whoever this service is serving.
+    /// </summary>
+    /// <param name="services">The services.</param>
+    /// <param name="configuration">The configuration supplying the <c>Authentication</c> section.</param>
+    /// <returns>The same collection, so calls a chain.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="services"/> or <paramref name="configuration"/> is null.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// For a service that calls another <em>as its caller</em> rather than as itself: a gateway, a
+    /// façade, an agent surface. The token that goes out descends from the token that came in, so the
+    /// downstream applies the caller's authority and not this service's.
+    /// </para>
+    /// <para>
+    /// Registered as <see cref="ITokenExchangeAuthenticator"/>, which is a different registration from
+    /// <see cref="IClientCredentialsAuthenticator"/> and does not replace it. The two are parallel, not ranked: a
+    /// service may call one downstream as itself and another as its caller, and each call site says
+    /// what it means by which interface it asks for. Adding this, therefore, cannot silently change how
+    /// an existing call authenticates.
+    /// </para>
+    /// <para>
+    /// The subject comes from the request being served, via
+    /// <see cref="HttpContextSubjectTokenProvider"/>. Supply your own
+    /// <see cref="ISubjectTokenProvider"/> before calling this to take it from somewhere else — a
+    /// queue message, a stored delegation — and this leaves it alone.
+    /// </para>
+    /// <para>
+    /// Both grants share one <see cref="ITokenRequestHostingContext"/>, because this service is who
+    /// it is either way. Replace it before calling this to send token requests differently, and both
+    /// grants follow.
+    /// </para>
+    /// <para>
+    /// Separate from <see cref="AddJwtBearerAuthentication"/> rather than folded into it, because
+    /// this turns on <c>IHttpContextAccessor</c> for the whole application and because a service
+    /// that may act as its caller should say so. Forgetting it is loud: a client configured for the
+    /// exchange fails its first call with the missing service named, rather than quietly going out
+    /// as this service.
+    /// </para>
+    /// </remarks>
+    public static IServiceCollection AddTokenExchangeAuthentication(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        // The settings, the token client and the cache are the same ones the client credentials grant
+        // needs, and asking for them twice is harmless: every registration below it is conditional.
+        services.AddClientAuthentication(configuration);
+
+        services.AddHttpContextAccessor();
+
+        services.TryAddSingleton<ISubjectTokenProvider, HttpContextSubjectTokenProvider>();
+        services.TryAddSingleton<ITokenExchangeAuthenticator, TokenExchangeAuthenticator>();
 
         return services;
     }

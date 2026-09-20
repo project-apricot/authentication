@@ -1,6 +1,7 @@
-using ApricotFramework.Authentication;
-using ApricotFramework.Authentication.AspNetCore;
 using ApricotFramework.Authentication.AspNetCore.Extensions;
+using ApricotFramework.Authentication.AspNetCore;
+using ApricotFramework.Authentication.ClientCredentials;
+using ApricotFramework.Authentication;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ApricotFramework.Authentication.Examples.Web.Controllers;
@@ -15,13 +16,13 @@ public class DemoController : ControllerBase
     /// <summary>
     /// The client obtaining tokens for onward calls.
     /// </summary>
-    private readonly IClientAuthenticator authenticator;
+    private readonly IClientCredentialsAuthenticator authenticator;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DemoController"/> class.
     /// </summary>
     /// <param name="authenticator">The client obtaining tokens for onward calls.</param>
-    public DemoController(IClientAuthenticator authenticator)
+    public DemoController(IClientCredentialsAuthenticator authenticator)
     {
         this.authenticator = authenticator;
     }
@@ -67,7 +68,7 @@ public class DemoController : ControllerBase
     public async Task<object> Token(CancellationToken cancellationToken)
     {
         var context = await this.authenticator.AuthenticateAsync(
-            new ClientAuthenticationParameters { Scopes = ["api"] },
+            new TokenRequestParameters { Scopes = ["api"] },
             cancellationToken);
 
         // The token is a bearer credential, so it is described rather than returned. An endpoint that
@@ -76,7 +77,7 @@ public class DemoController : ControllerBase
         {
             context.TokenType,
             context.ExpiresAt,
-            TokenLength = context.Token.Length,
+            TokenLength = context.Value.Length,
         };
     }
 
@@ -94,7 +95,7 @@ public class DemoController : ControllerBase
     {
         return this.authenticator.DoAuthenticatedAsync<object>(
             (_, _) => Task.FromResult<object>(new { Reached = true }),
-            new ClientAuthenticationParameters { Authority = "https://localhost:9" },
+            new TokenRequestParameters { Authority = "https://localhost:9" },
             cancellationToken);
     }
 
@@ -111,7 +112,7 @@ public class DemoController : ControllerBase
     {
         return this.authenticator.DoAuthenticatedAsync<object>(
             (_, _) => Task.FromResult<object>(new { Reached = true }),
-            new ClientAuthenticationParameters { Authority = "not-a-url" },
+            new TokenRequestParameters { Authority = "not-a-url" },
             cancellationToken);
     }
 }

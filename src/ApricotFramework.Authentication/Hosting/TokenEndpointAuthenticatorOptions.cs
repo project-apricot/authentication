@@ -1,4 +1,4 @@
-namespace ApricotFramework.Authentication;
+namespace ApricotFramework.Authentication.Hosting;
 
 /// <summary>
 /// How the client credentials grant is carried out, independent of who it is carried out as.
@@ -7,10 +7,10 @@ namespace ApricotFramework.Authentication;
 /// Not bound from configuration. The ASP.NET Core package projects a settings section onto this, so a
 /// host configures it there rather than here.
 /// </remarks>
-public sealed class ClientCredentialsAuthenticatorOptions
+public sealed class TokenEndpointAuthenticatorOptions
 {
     /// <summary>
-    /// How far before its stated expiry a token stops being served from cache.
+    /// How far before its stated expiry, a token stops being served from cache.
     /// </summary>
     public static readonly TimeSpan DefaultTokenExpirySkew = TimeSpan.FromSeconds(30);
 

@@ -1,6 +1,7 @@
 using System.Net;
-using ApricotFramework.Authentication;
-using ApricotFramework.Authentication.Impl;
+using ApricotFramework.Authentication.Caching;
+using ApricotFramework.Authentication.Hosting;
+using ApricotFramework.Authentication.ClientCredentials;
 
 namespace ApricotFramework.Authentication.Tests;
 
@@ -33,7 +34,7 @@ public class ClientCredentialsAuthenticatorCachingTests
         var first = await authenticator.AuthenticateAsync(Parameters(), TestContext.Current.CancellationToken);
         var second = await authenticator.AuthenticateAsync(Parameters(), TestContext.Current.CancellationToken);
 
-        Assert.Equal(first.Token, second.Token);
+        Assert.Equal(first.Value, second.Value);
         Assert.Equal(1, handler.CountFor("/connect/token"));
     }
 
@@ -123,7 +124,7 @@ public class ClientCredentialsAuthenticatorCachingTests
     [Fact]
     public async Task AuthenticateAsync_WithoutATokenType_ReportsBearer()
     {
-        var authenticator = Build(Provider("""{"access_token":"at-1","expires_in":3600}"""), new TestTokenCache());
+        var authenticator = Build(Provider(), new TestTokenCache());
 
         var context = await authenticator.AuthenticateAsync(Parameters(), TestContext.Current.CancellationToken);
 
@@ -168,7 +169,7 @@ public class ClientCredentialsAuthenticatorCachingTests
 
         var contexts = await Task.WhenAll(callers);
 
-        Assert.All(contexts, context => Assert.Equal("at-1", context.Token));
+        Assert.All(contexts, context => Assert.Equal("at-1", context.Value));
         Assert.Equal(1, handler.CountFor("/connect/token"));
     }
 
@@ -200,7 +201,7 @@ public class ClientCredentialsAuthenticatorCachingTests
 
         release.SetResult();
 
-        Assert.Equal("at-1", (await waiting).Token);
+        Assert.Equal("at-1", (await waiting).Value);
         Assert.Equal(1, handler.CountFor("/connect/token"));
     }
 
@@ -219,14 +220,16 @@ public class ClientCredentialsAuthenticatorCachingTests
             .On("/connect/token", HttpStatusCode.OK, token);
     }
 
-    private static ClientCredentialsAuthenticator Build(StubHttpMessageHandler handler, IClientAuthenticationCache cache)
+    private static ClientCredentialsAuthenticator Build(StubHttpMessageHandler handler, ITokenCache cache)
     {
-        return new ClientCredentialsAuthenticator(handler.CreateClient(), cache);
+        return new ClientCredentialsAuthenticator(
+            cache,
+            new StaticTokenRequestHostingContext(handler.CreateClient()));
     }
 
-    private static ClientAuthenticationParameters Parameters(IReadOnlyList<string>? scopes = null)
+    private static TokenRequestParameters Parameters(IReadOnlyList<string>? scopes = null)
     {
-        return new ClientAuthenticationParameters
+        return new TokenRequestParameters
         {
             Authority = "https://idp.example.com",
             ClientId = "svc",

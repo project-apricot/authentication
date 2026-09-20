@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>ApricotFramework.Authentication</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Description>The contracts of ApricotFramework.Authentication and nothing else: the authenticator a caller asks for a token, what it returns, how it fails, and the cache behind it. For a client library — a gRPC, REST or messaging client — that needs a token presented without depending on how one is obtained.</Description>
+    <PackageTags>oauth2;authentication;abstractions;contracts;client-credentials;token-exchange;service-to-service</PackageTags>
+  </PropertyGroup>
+
+</Project>

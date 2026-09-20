@@ -14,7 +14,7 @@ builder.Services.AddJwtBearerAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
 
 // Without this a rejected request answers 401 with an empty body, and a token this service could not
-// obtain for an onward call answers 500 with no indication of whose fault it was.
+// get for an onward call answers 500 with no indication of whose fault it was.
 builder.Services.AddAuthenticationErrorDefinitions();
 
 var app = builder.Build();

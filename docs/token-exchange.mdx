@@ -1,0 +1,148 @@
+---
+title: Token exchange
+description: Calling a downstream as the person you are serving rather than as yourself, with RFC 8693, and why the subject has to be part of the cache key.
+---
+
+# Token exchange
+
+A service that calls another as *itself* uses the client credentials grant. A service that calls
+another *as whoever it is serving* exchanges the token it was given for one the downstream accepts —
+RFC 8693. The downstream then applies that person's authority, so a gateway, a façade or an agent
+surface can reach no more than the person behind it could.
+
+The client still authenticates as itself; RFC 8693 requires it and the credentials are the same ones
+the client credentials grant would send. What changes is whose authority comes back.
+
+```
+caller ──token A──▶ this service ──exchange(A)──▶ provider
+                          │                          │
+                          └──────token B─────────────┘
+                                   │
+                                   ▼
+                              downstream  (sees the caller, not this service)
+```
+
+## Two interfaces, in parallel
+
+`IClientCredentialsAuthenticator` and `ITokenExchangeAuthenticator` both derive from `ITokenAuthenticator` and
+both do nothing but mark which grant is meant. They are not ranked and neither replaces the other: a
+host may register both, and each call site says which it wants by which one it asks for.
+
+That is deliberate. Making the exchange a *replacement* for the client authenticator would mean the
+choice depended on registration order, and getting it backwards would be invisible — the build
+succeeds, every test that does not involve a real person passes, and every downstream call quietly
+goes out as the service instead.
+
+```csharp
+// as this service
+private readonly IClientCredentialsAuthenticator own;
+
+// as whoever we are serving
+private readonly ITokenExchangeAuthenticator onBehalf;
+```
+
+## Registering it
+
+```csharp
+builder.Services.AddJwtBearerAuthentication(builder.Configuration);
+builder.Services.AddTokenExchangeAuthentication(builder.Configuration);
+```
+
+Both, in either order. The exchange reads the same `Authentication:Client` credentials — this service
+is who it is whether it asks for a token of its own or one on somebody's behalf — and adds nothing to
+the settings. Both grants share one `ITokenRequestHostingContext` for exactly that reason.
+
+## Where the subject comes from
+
+`ISubjectTokenProvider` answers with the party being acted for. The default,
+`HttpContextSubjectTokenProvider`, takes the bearer token off the request being served:
+
+- only from an **authenticated** request — an `Authorization` header alone is a string somebody sent
+  us, and requiring that the handler validated it first means what goes out has been checked here;
+- from the **header** rather than from the authentication properties, because the bearer handler is
+  not asked to save the token and `GetTokenAsync("access_token")` returns nothing unless a host sets
+  `SaveToken`;
+- with the expiry read from the **claims the handler already parsed**, so nothing here decodes a JWT.
+
+Register your own before `AddTokenExchangeAuthentication` to take the subject from somewhere else — a
+queue message, a stored delegation — and everything else stays as it is.
+
+```csharp
+public sealed class DelegationSubjectTokenProvider(IDelegationStore store) : ISubjectTokenProvider
+{
+    public async ValueTask<SubjectToken?> GetSubjectTokenAsync(CancellationToken cancellationToken)
+    {
+        var grant = await store.CurrentAsync(cancellationToken);
+
+        return grant is null ? null : new SubjectToken(grant.Token, TokenExchangeTokenTypes.AccessToken, grant.ExpiresAt);
+    }
+}
+```
+
+## It refuses rather than falls back
+
+No subject means no exchange, and the call fails with
+`TokenRequestFailure.InvalidCredentials`. There is deliberately no path on which this obtains
+a token for the service instead: that would substitute this service's authority for the caller's on
+exactly the calls where the caller could not be identified, which is the escalation the arrangement
+exists to prevent.
+
+## The subject is part of the cache key
+
+`TokenCacheKeys.ForToken` includes a digest of the subject token, alongside the actor token
+and the three RFC 8693 type parameters. Two people asking for the same scopes and the same resource
+therefore do not share an entry, and neither do two callers waiting on the same in-flight request.
+
+This is the failure worth stating plainly, because it looks like success: a key covering only
+authority, client, scopes and resources is read *before* the token is fetched, so under it the second
+person to call is handed the first person's credential and the downstream sees the wrong user. Both
+tokens are hashed rather than written in — a cache key reaches a log line, a dump, or whatever backs
+a distributed cache, and the credential belongs in the value.
+
+If you implement `ITokenCache` yourself, build keys with `TokenCacheKeys`
+rather than inventing a scheme.
+
+## Parameters
+
+Everything RFC 8693 defines is on `TokenRequestParameters` alongside the RFC 6749 and RFC 8707 fields,
+because on the wire it is one form with optional fields. The authenticator knows which of them its
+grant sends; the rest are ignored.
+
+| Member | Notes |
+| --- | --- |
+| `SubjectToken`, `SubjectTokenType` | The party being acted for. Filled in from the provider when a caller names none. |
+| `ActorToken`, `ActorTokenType` | Present when delegation is meant rather than impersonation. |
+| `RequestedTokenType` | Absent means the provider decides, which is normally an access token. |
+| `Audiences` | The logical name of the callee, as against `Resources`, which locates it. |
+
+`TokenExchangeTokenTypes` holds the six URNs the RFC defines, so a token type is never a literal.
+
+A caller that sets `SubjectToken` itself is left alone — the provider is only consulted when the
+parameters name no subject.
+
+## Calling a downstream with it
+
+`ApricotFramework.Grpc.Client.Authentication` has `AddGrpcExchangedCallCredentials`, the counterpart
+of `AddGrpcCallCredentials`, chosen per client because it is a property of the callee:
+
+```csharp
+services
+    .AddDiscoveredGrpcClient<Content.ContentClient>("content")
+    .AddGrpcExchangedCallCredentials(credentials =>
+    {
+        credentials.Resource = "urn:svc:content";
+        credentials.Scopes = ["content.agent"];
+    });
+```
+
+## What stays with your provider
+
+Two rules belong in the authorization server, not here, because only it can enforce them against a
+client that does not use this library:
+
+- **refusing a chained exchange** — a token that already carries `act` should not be exchangeable
+  again; and
+- **bounding what may be asked for** — the scopes and audiences a given client may exchange up to.
+
+A client-side check is a convenience that turns a misconfiguration into your own clear refusal. It is
+not a control.

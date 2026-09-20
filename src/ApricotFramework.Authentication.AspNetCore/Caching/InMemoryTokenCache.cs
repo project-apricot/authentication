@@ -1,23 +1,24 @@
+using ApricotFramework.Authentication.Caching;
 using Microsoft.Extensions.Caching.Memory;
 
-namespace ApricotFramework.Authentication.AspNetCore.Impl;
+namespace ApricotFramework.Authentication.AspNetCore.Caching;
 
 /// <summary>
 /// Keeps tokens and discovered endpoints in the host's memory cache.
 /// </summary>
 /// <remarks>
-/// Process-local, so each instance of a service obtains its own tokens. That is the right default —
+/// Process-local, so each instance of a service gets its own tokens. That is the right default —
 /// it needs no shared infrastructure and leaks no credentials between hosts — and a distributed
-/// implementation can replace it by registering <see cref="IClientAuthenticationCache"/> first.
+/// implementation can replace it by registering <see cref="ITokenCache"/> first.
 /// </remarks>
-public class InMemoryClientAuthenticationCache : IClientAuthenticationCache
+public class InMemoryTokenCache : ITokenCache
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="InMemoryClientAuthenticationCache"/> class.
+    /// Initializes a new instance of the <see cref="InMemoryTokenCache"/> class.
     /// </summary>
     /// <param name="cache">The host's memory cache.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="cache"/> is null.</exception>
-    public InMemoryClientAuthenticationCache(IMemoryCache cache)
+    public InMemoryTokenCache(IMemoryCache cache)
     {
         ArgumentNullException.ThrowIfNull(cache);
 
@@ -30,27 +31,27 @@ public class InMemoryClientAuthenticationCache : IClientAuthenticationCache
     protected IMemoryCache Cache { get; }
 
     /// <inheritdoc />
-    public virtual ValueTask<AuthenticatedClientContext?> GetTokenAsync(
-        ClientAuthenticationParameters parameters,
+    public virtual ValueTask<AccessToken?> GetTokenAsync(
+        TokenRequestParameters parameters,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
         return ValueTask.FromResult(
-            this.Cache.Get<AuthenticatedClientContext>(ClientAuthenticationKeys.ForToken(parameters)));
+            this.Cache.Get<AccessToken>(TokenCacheKeys.ForToken(parameters)));
     }
 
     /// <inheritdoc />
     public virtual ValueTask SetTokenAsync(
-        ClientAuthenticationParameters parameters,
-        AuthenticatedClientContext context,
+        TokenRequestParameters parameters,
+        AccessToken context,
         DateTimeOffset expiresAt,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(parameters);
         ArgumentNullException.ThrowIfNull(context);
 
-        this.Cache.Set(ClientAuthenticationKeys.ForToken(parameters), context, expiresAt);
+        this.Cache.Set(TokenCacheKeys.ForToken(parameters), context, expiresAt);
 
         return ValueTask.CompletedTask;
     }
@@ -63,7 +64,7 @@ public class InMemoryClientAuthenticationCache : IClientAuthenticationCache
         ArgumentNullException.ThrowIfNull(authority);
 
         return ValueTask.FromResult(
-            this.Cache.Get<string>(ClientAuthenticationKeys.ForTokenEndpoint(authority)));
+            this.Cache.Get<string>(TokenCacheKeys.ForTokenEndpoint(authority)));
     }
 
     /// <inheritdoc />
@@ -76,7 +77,7 @@ public class InMemoryClientAuthenticationCache : IClientAuthenticationCache
         ArgumentNullException.ThrowIfNull(authority);
         ArgumentNullException.ThrowIfNull(tokenEndpoint);
 
-        this.Cache.Set(ClientAuthenticationKeys.ForTokenEndpoint(authority), tokenEndpoint, expiresAt);
+        this.Cache.Set(TokenCacheKeys.ForTokenEndpoint(authority), tokenEndpoint, expiresAt);
 
         return ValueTask.CompletedTask;
     }

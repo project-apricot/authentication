@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
-using ApricotFramework.Authentication;
-using ApricotFramework.Authentication.Impl;
+using ApricotFramework.Authentication.ClientCredentials;
+using ApricotFramework.Authentication.Hosting;
 
 namespace ApricotFramework.Authentication.Tests;
 
@@ -28,7 +28,7 @@ public class AdversarialInputTests
         var handler = Provider();
 
         await Build(handler).AuthenticateAsync(
-            new ClientAuthenticationParameters
+            new TokenRequestParameters
             {
                 Authority = "https://idp.example.com",
                 ClientId = "svc",
@@ -51,7 +51,7 @@ public class AdversarialInputTests
         var handler = Provider();
 
         await Build(handler).AuthenticateAsync(
-            new ClientAuthenticationParameters
+            new TokenRequestParameters
             {
                 Authority = "https://idp.example.com",
                 ClientId = "svc",
@@ -70,7 +70,7 @@ public class AdversarialInputTests
         var scopes = Enumerable.Range(0, 5_000).Select(index => $"scope-{index}").ToArray();
 
         await Build(handler).AuthenticateAsync(
-            new ClientAuthenticationParameters
+            new TokenRequestParameters
             {
                 Authority = "https://idp.example.com",
                 ClientId = "svc",
@@ -91,10 +91,10 @@ public class AdversarialInputTests
     {
         var handler = new StubHttpMessageHandler().On(".well-known", HttpStatusCode.OK, body);
 
-        var failure = await Assert.ThrowsAsync<ClientAuthenticationException>(
+        var failure = await Assert.ThrowsAsync<TokenRequestException>(
             () => Build(handler).AuthenticateAsync(Parameters(), TestContext.Current.CancellationToken));
 
-        Assert.NotEqual(ClientAuthenticationFailure.Unavailable, failure.Reason);
+        Assert.NotEqual(TokenRequestFailure.Unavailable, failure.Reason);
     }
 
     [Theory]
@@ -107,10 +107,10 @@ public class AdversarialInputTests
             .On(".well-known", HttpStatusCode.OK, Metadata)
             .On("/connect/token", HttpStatusCode.OK, body);
 
-        var failure = await Assert.ThrowsAsync<ClientAuthenticationException>(
+        var failure = await Assert.ThrowsAsync<TokenRequestException>(
             () => Build(handler).AuthenticateAsync(Parameters(), TestContext.Current.CancellationToken));
 
-        Assert.Equal(ClientAuthenticationFailure.Unknown, failure.Reason);
+        Assert.Equal(TokenRequestFailure.Unknown, failure.Reason);
     }
 
     [Fact]
@@ -123,7 +123,7 @@ public class AdversarialInputTests
 
         var context = await Build(handler).AuthenticateAsync(Parameters(), TestContext.Current.CancellationToken);
 
-        Assert.Equal(token.Length, context.Token.Length);
+        Assert.Equal(token.Length, context.Value.Length);
     }
 
     [Theory]
@@ -148,10 +148,10 @@ public class AdversarialInputTests
         var handler = new StubHttpMessageHandler()
             .On(".well-known", new StringContent(new string('x', 4 * 1024 * 1024), Encoding.UTF8, "application/json"));
 
-        var failure = await Assert.ThrowsAsync<ClientAuthenticationException>(
+        var failure = await Assert.ThrowsAsync<TokenRequestException>(
             () => Build(handler).AuthenticateAsync(Parameters(), TestContext.Current.CancellationToken));
 
-        Assert.Equal(ClientAuthenticationFailure.Unavailable, failure.Reason);
+        Assert.Equal(TokenRequestFailure.Unavailable, failure.Reason);
     }
 
     [Fact]
@@ -162,7 +162,7 @@ public class AdversarialInputTests
         var handler = Provider();
 
         await Build(handler).AuthenticateAsync(
-            new ClientAuthenticationParameters
+            new TokenRequestParameters
             {
                 Authority = "https://idp.example.com",
                 ClientId = "svc",
@@ -184,12 +184,14 @@ public class AdversarialInputTests
 
     private static ClientCredentialsAuthenticator Build(StubHttpMessageHandler handler)
     {
-        return new ClientCredentialsAuthenticator(handler.CreateClient(), new TestTokenCache());
+        return new ClientCredentialsAuthenticator(
+            new TestTokenCache(),
+            new StaticTokenRequestHostingContext(handler.CreateClient()));
     }
 
-    private static ClientAuthenticationParameters Parameters(string authority = "https://idp.example.com")
+    private static TokenRequestParameters Parameters(string authority = "https://idp.example.com")
     {
-        return new ClientAuthenticationParameters
+        return new TokenRequestParameters
         {
             Authority = authority,
             ClientId = "svc",

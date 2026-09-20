@@ -1,5 +1,6 @@
 # ApricotFramework.Authentication
 
+[![NuGet](https://img.shields.io/nuget/v/ApricotFramework.Authentication.Abstractions.svg?label=ApricotFramework.Authentication.Abstractions)](https://www.nuget.org/packages/ApricotFramework.Authentication.Abstractions/)
 [![NuGet](https://img.shields.io/nuget/v/ApricotFramework.Authentication.svg?label=ApricotFramework.Authentication)](https://www.nuget.org/packages/ApricotFramework.Authentication/)
 [![NuGet](https://img.shields.io/nuget/v/ApricotFramework.Authentication.AspNetCore.svg?label=ApricotFramework.Authentication.AspNetCore)](https://www.nuget.org/packages/ApricotFramework.Authentication.AspNetCore/)
 [![NuGet](https://img.shields.io/nuget/v/ApricotFramework.Authentication.ErrorDefinitions.svg?label=ApricotFramework.Authentication.ErrorDefinitions)](https://www.nuget.org/packages/ApricotFramework.Authentication.ErrorDefinitions/)
@@ -7,12 +8,17 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/project-apricot/authentication/blob/main/LICENSE)
 
 Both directions of a microservice's authentication from one settings section: JWT bearer validation for
-the requests it serves, and OAuth 2.0 client credentials tokens for the services it calls — discovered,
-cached until shortly before they expire, and coalesced so a cold start makes one token request rather
-than one per caller.
+the requests it serves, and OAuth 2.0 tokens for the services it calls — discovered, cached until
+shortly before they expire, and coalesced so a cold start makes one token request rather than one per
+caller.
+
+Outbound, either grant: **client credentials** to call as this service, or **RFC 8693 token exchange**
+to call as whoever this service is serving. Both can be registered at once and are chosen per call
+site, so nothing depends on registration order.
 
 `ApricotFramework.Authentication` is the **zero-dependency** core, and works in a console or worker host
-without ASP.NET Core.
+without ASP.NET Core. `ApricotFramework.Authentication.Abstractions` is the contracts alone, for a
+client library that needs a token presented without depending on how one is obtained.
 
 ## Install
 
